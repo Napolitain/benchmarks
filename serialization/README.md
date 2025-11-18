@@ -6,7 +6,7 @@ This Rust CLI tool benchmarks various serialization formats to compare their per
 
 - **Apache Arrow**: A columnar memory format optimized for analytics
 - **Protocol Buffers v3**: Google's language-neutral data serialization format
-- **Cap'n Proto**: A fast data interchange format (simplified implementation)
+- **Cap'n Proto**: A fast data interchange format with zero-copy deserialization
 
 ## Metrics
 

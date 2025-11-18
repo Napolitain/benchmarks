@@ -1,5 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId, Throughput};
-use arrow::array::{ArrayRef, Int64Array, Float64Array};
+use arrow::array::{ArrayRef, Int64Array, Float64Array, StringArray, BinaryArray, Int32Array};
 use arrow::datatypes::{DataType, Field, Schema};
 use arrow::record_batch::RecordBatch;
 use arrow::ipc::writer::StreamWriter;
@@ -8,6 +8,11 @@ use std::sync::Arc;
 // Include generated protobuf code
 pub mod benchmark {
     include!(concat!(env!("OUT_DIR"), "/benchmark.rs"));
+}
+
+// Include generated Cap'n Proto code
+pub mod benchmark_capnp {
+    include!(concat!(env!("OUT_DIR"), "/proto/benchmark_capnp.rs"));
 }
 
 use benchmark::BenchmarkData as ProtoBenchmarkData;
@@ -36,14 +41,33 @@ struct TestRecord {
 
 // Arrow serialization
 fn benchmark_arrow(records: &[TestRecord]) -> Vec<u8> {
-    // Create arrays
+    // Create arrays for all fields
     let ids: Int64Array = records.iter().map(|r| Some(r.id)).collect();
+    let names: StringArray = records.iter().map(|r| Some(r.name.as_str())).collect();
     let values: Float64Array = records.iter().map(|r| Some(r.value)).collect();
+    
+    // Create ListArray for numbers field
+    let numbers_field = Arc::new(Field::new("item", DataType::Int32, false));
+    let mut numbers_builder = arrow::array::ListBuilder::new(Int32Array::builder(0)).with_field(numbers_field);
+    for record in records {
+        let int_builder = numbers_builder.values();
+        for &num in &record.numbers {
+            int_builder.append_value(num);
+        }
+        numbers_builder.append(true);
+    }
+    let numbers_array = numbers_builder.finish();
+    
+    // Create BinaryArray for data field
+    let data_array: BinaryArray = records.iter().map(|r| Some(r.data.as_slice())).collect();
     
     // Create schema
     let schema = Schema::new(vec![
         Field::new("id", DataType::Int64, false),
+        Field::new("name", DataType::Utf8, false),
         Field::new("value", DataType::Float64, false),
+        Field::new("numbers", DataType::List(Arc::new(Field::new("item", DataType::Int32, false))), false),
+        Field::new("data", DataType::Binary, false),
     ]);
     
     // Create record batch
@@ -51,7 +75,10 @@ fn benchmark_arrow(records: &[TestRecord]) -> Vec<u8> {
         Arc::new(schema.clone()),
         vec![
             Arc::new(ids) as ArrayRef,
+            Arc::new(names) as ArrayRef,
             Arc::new(values) as ArrayRef,
+            Arc::new(numbers_array) as ArrayRef,
+            Arc::new(data_array) as ArrayRef,
         ],
     )
     .unwrap();
@@ -87,24 +114,31 @@ fn benchmark_protobuf(records: &[TestRecord]) -> Vec<u8> {
     buffer
 }
 
-// Cap'n Proto serialization (simplified)
+// Cap'n Proto serialization
 fn benchmark_capnproto(records: &[TestRecord]) -> Vec<u8> {
-    // For simplicity, we'll use a basic binary format
-    // A full Cap'n Proto implementation would require schema compilation
+    use capnp::message::Builder;
+    use capnp::serialize;
+    
     let mut buffer = Vec::new();
     
     for record in records {
-        // Simple binary encoding for demonstration
-        buffer.extend_from_slice(&record.id.to_le_bytes());
-        buffer.extend_from_slice(&(record.name.len() as u32).to_le_bytes());
-        buffer.extend_from_slice(record.name.as_bytes());
-        buffer.extend_from_slice(&record.value.to_le_bytes());
-        buffer.extend_from_slice(&(record.numbers.len() as u32).to_le_bytes());
-        for num in &record.numbers {
-            buffer.extend_from_slice(&num.to_le_bytes());
+        let mut message = Builder::new_default();
+        {
+            let mut benchmark_data = message.init_root::<benchmark_capnp::benchmark_data::Builder>();
+            benchmark_data.set_id(record.id);
+            benchmark_data.set_name(&record.name);
+            benchmark_data.set_value(record.value);
+            
+            let mut numbers_builder = benchmark_data.reborrow().init_numbers(record.numbers.len() as u32);
+            for (i, &num) in record.numbers.iter().enumerate() {
+                numbers_builder.set(i as u32, num);
+            }
+            
+            benchmark_data.set_data(&record.data);
         }
-        buffer.extend_from_slice(&(record.data.len() as u32).to_le_bytes());
-        buffer.extend_from_slice(&record.data);
+        
+        let encoded = serialize::write_message_to_words(&message);
+        buffer.extend_from_slice(&encoded);
     }
     
     buffer
@@ -146,23 +180,5 @@ fn encoding_benchmarks(c: &mut Criterion) {
     group.finish();
 }
 
-fn encoding_size_benchmark(_c: &mut Criterion) {
-    let size = 1000;
-    let records = generate_test_data(size);
-    
-    println!("\n=== Encoding Size Comparison (1000 records) ===");
-    
-    let arrow_size = benchmark_arrow(&records).len();
-    println!("Arrow:     {} bytes", arrow_size);
-    
-    let protobuf_size = benchmark_protobuf(&records).len();
-    println!("Protobuf:  {} bytes", protobuf_size);
-    
-    let capnproto_size = benchmark_capnproto(&records).len();
-    println!("CapnProto: {} bytes", capnproto_size);
-    
-    println!("============================================\n");
-}
-
-criterion_group!(benches, encoding_benchmarks, encoding_size_benchmark);
+criterion_group!(benches, encoding_benchmarks);
 criterion_main!(benches);
