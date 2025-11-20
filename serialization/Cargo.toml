@@ -1,0 +1,23 @@
+[package]
+name = "serialization-benchmark"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Serialization formats
+arrow = "53.3.0"
+prost = "0.13"
+capnp = "0.20"
+
+# For benchmarking
+criterion = "0.5"
+
+[build-dependencies]
+# For building protobuf schemas
+prost-build = "0.13"
+# For building Cap'n Proto schemas
+capnpc = "0.20"
+
+[[bench]]
+name = "serialization_bench"
+harness = false
