@@ -1,0 +1,51 @@
+# Binaries
+bin/
+*.exe
+*.out
+*.test
+
+# Build artifacts
+api/uWebSockets/uSockets/*.o
+api/uWebSockets/uSockets/*.a
+api/uWebSockets/*.o
+api/uWebSockets/HelloWorld
+api/uWebSockets/HelloWorldBenchmark
+api/uWebSockets/HelloWorldThreaded
+api/uWebSockets/Http3Server
+api/uWebSockets/HttpServer
+api/uWebSockets/EchoServer
+api/uWebSockets/BroadcastingEchoServer
+api/uWebSockets/Broadcast
+api/uWebSockets/ServerName
+api/uWebSockets/Crc32
+api/uWebSockets/EchoBody
+api/uWebSockets/Precompress
+api/uWebSockets/SecureGzipFileServer
+api/uWebSockets/UpgradeSync
+api/uWebSockets/UpgradeAsync
+api/uWebSockets/ParameterRoutes
+api/uWebSockets/build
+api/uWebSockets/a.out
+
+# Results
+results/*.json
+
+# Python
+api/python-fastapi/__pycache__/
+api/python-fastapi/*.pyc
+api/python-fastapi/venv/
+api/python-fastapi/.venv/
+
+# Node
+api/node-http/node_modules/
+
+# Nginx
+api/nginx-static/logs/
+api/nginx-static/client_body_temp/
+api/nginx-static/proxy_temp/
+api/nginx-static/fastcgi_temp/
+api/nginx-static/uwsgi_temp/
+api/nginx-static/scgi_temp/
+
+# Go
+go.sum

@@ -1,0 +1,12 @@
+{
+  "name": "node-helloworld",
+  "version": "1.0.0",
+  "description": "Hello World HTTP API for benchmarking",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": ["benchmark", "http", "api"],
+  "author": "",
+  "license": "MIT"
+}
