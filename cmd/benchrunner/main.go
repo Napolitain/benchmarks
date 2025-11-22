@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -19,7 +20,6 @@ var (
 	connections int
 	pipeline    int
 	duration    int
-	serverNames string
 	baseDir     string
 )
 
@@ -34,17 +34,34 @@ func main() {
 		Long:  "Orchestrates HTTP benchmarks across multiple server implementations",
 	}
 
+	// Run command with subcommands
 	runCmd := &cobra.Command{
 		Use:   "run",
 		Short: "Run benchmarks",
-		Long:  "Run benchmarks on all or selected servers",
-		RunE:  runBenchmarks,
+		Long:  "Run different types of benchmarks",
 	}
 
-	runCmd.Flags().IntVarP(&connections, "connections", "c", 100, "Number of connections")
-	runCmd.Flags().IntVarP(&pipeline, "pipeline", "p", 1, "Pipeline factor")
-	runCmd.Flags().IntVarP(&duration, "duration", "d", 10, "Duration in seconds")
-	runCmd.Flags().StringVarP(&serverNames, "servers", "s", "", "Comma-separated server names (default: all)")
+	// Run server subcommand
+	runServerCmd := &cobra.Command{
+		Use:   "server [api-name]",
+		Short: "Run HTTP server benchmarks",
+		Long:  "Run benchmarks on all or selected HTTP servers",
+		RunE:  runServerBenchmarks,
+	}
+
+	runServerCmd.Flags().IntVarP(&connections, "connections", "c", 100, "Number of connections")
+	runServerCmd.Flags().IntVarP(&pipeline, "pipeline", "p", 1, "Pipeline factor")
+	runServerCmd.Flags().IntVarP(&duration, "duration", "d", 10, "Duration in seconds")
+
+	// Run startup subcommand
+	runStartupCmd := &cobra.Command{
+		Use:   "startup",
+		Short: "Run startup time benchmarks",
+		Long:  "Run startup time benchmarks for all languages using hyperfine",
+		RunE:  runStartupBenchmarks,
+	}
+
+	runCmd.AddCommand(runServerCmd, runStartupCmd)
 
 	buildCmd := &cobra.Command{
 		Use:   "build",
@@ -93,7 +110,12 @@ func listServers(cmd *cobra.Command, args []string) {
 	}
 }
 
-func runBenchmarks(cmd *cobra.Command, args []string) error {
+func runServerBenchmarks(cmd *cobra.Command, args []string) error {
+	// Parse server name from args
+	var targetServer string
+	if len(args) > 0 {
+		targetServer = args[0]
+	}
 	// Build binary first
 	b := builder.New(baseDir)
 	if err := b.Build(); err != nil {
@@ -104,17 +126,13 @@ func runBenchmarks(cmd *cobra.Command, args []string) error {
 	var serversToRun []config.ServerConfig
 	allServers := config.GetServers(baseDir)
 
-	if serverNames == "" {
+	if targetServer == "" {
 		serversToRun = allServers
 	} else {
-		names := strings.Split(serverNames, ",")
-		for _, name := range names {
-			name = strings.TrimSpace(name)
-			if srv := config.GetServerByName(baseDir, name); srv != nil {
-				serversToRun = append(serversToRun, *srv)
-			} else {
-				return fmt.Errorf("unknown server: %s", name)
-			}
+		if srv := config.GetServerByName(baseDir, targetServer); srv != nil {
+			serversToRun = append(serversToRun, *srv)
+		} else {
+			return fmt.Errorf("unknown server: %s", targetServer)
 		}
 	}
 
@@ -183,6 +201,53 @@ func printSummary(results []*benchmark.Result) {
 		fmt.Printf("%-20s %15s %15s %15s\n", r.ServerName, reqPerSec, memory, status)
 	}
 	fmt.Println(strings.Repeat("=", 80))
+}
+
+func runStartupBenchmarks(cmd *cobra.Command, args []string) error {
+	startupDir := filepath.Join(baseDir, "startup")
+	
+	// Check if hyperfine is installed
+	if _, err := exec.LookPath("hyperfine"); err != nil {
+		return fmt.Errorf("hyperfine not found. Install with: sudo apt install hyperfine")
+	}
+	
+	fmt.Println("Running startup time benchmarks with hyperfine...")
+	fmt.Println(strings.Repeat("=", 80))
+	
+	// Define benchmark commands
+	memoryDir := filepath.Join(startupDir, "memory")
+	benchmarks := []struct {
+		name string
+		cmd  string
+	}{
+		{"Go Bubblesort", "cd " + filepath.Join(startupDir, "compute") + " && go run bubblesort.go"},
+		{"Node Bubblesort", filepath.Join(startupDir, "compute", "bubblesort.js")},
+		{"Python Bubblesort", filepath.Join(startupDir, "compute", "bubblesort.py")},
+		{"Go Rectangle", "cd " + memoryDir + " && go run rectangle.go test_rectangle.yaml"},
+		{"Node Rectangle", filepath.Join(memoryDir, "rectangle.js") + " " + filepath.Join(memoryDir, "test_rectangle.yaml")},
+		{"Python Rectangle", filepath.Join(memoryDir, "rectangle.py") + " " + filepath.Join(memoryDir, "test_rectangle.yaml")},
+	}
+	
+	// Build hyperfine command
+	var cmdArgs []string
+	cmdArgs = append(cmdArgs, "--warmup", "3", "--runs", "10")
+	
+	for _, b := range benchmarks {
+		cmdArgs = append(cmdArgs, "--command-name", b.name, b.cmd)
+	}
+	
+	// Run hyperfine
+	hyperfineCmd := exec.Command("hyperfine", cmdArgs...)
+	hyperfineCmd.Stdout = os.Stdout
+	hyperfineCmd.Stderr = os.Stderr
+	hyperfineCmd.Dir = baseDir
+	
+	if err := hyperfineCmd.Run(); err != nil {
+		return fmt.Errorf("hyperfine failed: %w", err)
+	}
+	
+	fmt.Println(strings.Repeat("=", 80))
+	return nil
 }
 
 func saveResults(results []*benchmark.Result) error {
