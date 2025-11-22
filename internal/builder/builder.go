@@ -86,24 +86,21 @@ func (b *Builder) buildLoadTest() error {
 
 	fmt.Println("Building http_load_test...")
 	
-	sourceFile := filepath.Join(b.uSocketsPath, "examples", "http_load_test.c")
+	// Use uSockets Makefile to build examples (includes http_load_test)
+	makeCmd := exec.Command("make", "examples")
+	makeCmd.Dir = b.uSocketsPath
+	makeCmd.Env = append(os.Environ(), "WITH_OPENSSL=0")
+	makeCmd.Stdout = os.Stdout
+	makeCmd.Stderr = os.Stderr
 	
-	compileCmd := exec.Command("gcc",
-		"-std=c11",
-		"-O3",
-		"-DLIBUS_NO_SSL",
-		"-I"+filepath.Join(b.uSocketsPath, "src"),
-		"-o", b.outputBinary,
-		sourceFile,
-		filepath.Join(b.uSocketsPath, "uSockets.a"),
-	)
-	
-	compileCmd.Dir = b.uSocketsPath
-	compileCmd.Stdout = os.Stdout
-	compileCmd.Stderr = os.Stderr
-	
-	if err := compileCmd.Run(); err != nil {
-		return fmt.Errorf("failed to compile http_load_test: %w", err)
+	if err := makeCmd.Run(); err != nil {
+		return fmt.Errorf("failed to build examples: %w", err)
+	}
+
+	// Copy http_load_test to bin directory
+	srcBinary := filepath.Join(b.uSocketsPath, "http_load_test")
+	if err := copyFile(srcBinary, b.outputBinary); err != nil {
+		return fmt.Errorf("failed to copy http_load_test: %w", err)
 	}
 
 	fmt.Printf("Successfully built: %s\n", b.outputBinary)
@@ -135,10 +132,10 @@ func (b *Builder) buildUWebSocketsServer() error {
 	}
 
 	// Copy the built binary to bin directory
-	srcBinary := filepath.Join(b.uWebSocketsPath, "HelloWorldBenchmark")
+	srcBinary := filepath.Join(b.uWebSocketsPath, "HelloWorld")
 
 	if err := copyFile(srcBinary, b.uWebSocketsBin); err != nil {
-		return fmt.Errorf("failed to copy HelloWorldBenchmark: %w", err)
+		return fmt.Errorf("failed to copy HelloWorld: %w", err)
 	}
 
 	fmt.Printf("Successfully built: %s\n", b.uWebSocketsBin)

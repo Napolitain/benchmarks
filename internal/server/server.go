@@ -19,6 +19,13 @@ func New(cfg *config.ServerConfig) *Server {
 	return &Server{config: cfg}
 }
 
+func (s *Server) GetPID() int {
+	if s.cmd != nil && s.cmd.Process != nil {
+		return s.cmd.Process.Pid
+	}
+	return -1
+}
+
 func (s *Server) Start() error {
 	fmt.Printf("Starting %s...\n", s.config.Name)
 
@@ -61,7 +68,7 @@ func (s *Server) Stop() error {
 	// Kill process (Linux)
 	s.cmd.Process.Kill()
 	s.cmd.Wait()
-	time.Sleep(1 * time.Second)
+	time.Sleep(2 * time.Second)
 	return nil
 }
 

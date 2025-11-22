@@ -1,0 +1,12 @@
+{
+  "type": "record",
+  "name": "BenchmarkData",
+  "namespace": "benchmark",
+  "fields": [
+    {"name": "id", "type": "long"},
+    {"name": "name", "type": "string"},
+    {"name": "value", "type": "double"},
+    {"name": "numbers", "type": {"type": "array", "items": "int"}},
+    {"name": "data", "type": "bytes"}
+  ]
+}

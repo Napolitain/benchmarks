@@ -49,3 +49,21 @@ api/nginx-static/scgi_temp/
 
 # Go
 go.sum
+
+# Benchmark runner binary
+/benchrunner
+
+# Node modules anywhere
+node_modules/
+package-lock.json
+
+# Compiled binaries
+startup/bubblesort
+api/go-http/helloworld
+
+# Rust build
+serialization/target/
+serialization/Cargo.lock
+
+# Temp files
+/tmp/bench_*.txt

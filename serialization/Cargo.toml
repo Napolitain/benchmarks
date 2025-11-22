@@ -5,9 +5,11 @@ edition = "2021"
 
 [dependencies]
 # Serialization formats
-arrow = "53.3.0"
 prost = "0.13"
 capnp = "0.20"
+apache-avro = "0.17"
+fory = "0.13"
+fory-derive = "0.13"
 
 # For benchmarking
 criterion = "0.5"

@@ -140,7 +140,7 @@ func runBenchmarks(cmd *cobra.Command, args []string) error {
 		}
 
 		// Run benchmark
-		result, err := runner.Run(srvCfg.Name, srvCfg.Port)
+		result, err := runner.Run(srvCfg.Name, srvCfg.Port, srv.GetPID())
 		if err != nil {
 			fmt.Printf("WARNING: Benchmark failed: %v\n", err)
 		}
@@ -149,8 +149,8 @@ func runBenchmarks(cmd *cobra.Command, args []string) error {
 		// Stop server
 		srv.Stop()
 
-		// Wait between benchmarks
-		time.Sleep(2 * time.Second)
+		// Wait between benchmarks (ensure port is fully released)
+		time.Sleep(5 * time.Second)
 	}
 
 	// Print summary
@@ -168,17 +168,19 @@ func printSummary(results []*benchmark.Result) {
 	fmt.Println("\n" + strings.Repeat("=", 80))
 	fmt.Println("BENCHMARK SUMMARY")
 	fmt.Println(strings.Repeat("=", 80))
-	fmt.Printf("%-20s %15s %15s\n", "Server", "Req/sec", "Status")
+	fmt.Printf("%-20s %15s %15s %15s\n", "Server", "Req/sec", "Memory (MB)", "Status")
 	fmt.Println(strings.Repeat("-", 80))
 
 	for _, r := range results {
 		status := "OK"
 		reqPerSec := fmt.Sprintf("%.2f", r.ReqPerSec)
+		memory := fmt.Sprintf("%.2f", r.MemoryMB)
 		if r.Error != "" {
 			status = "FAILED"
 			reqPerSec = "N/A"
+			memory = "N/A"
 		}
-		fmt.Printf("%-20s %15s %15s\n", r.ServerName, reqPerSec, status)
+		fmt.Printf("%-20s %15s %15s %15s\n", r.ServerName, reqPerSec, memory, status)
 	}
 	fmt.Println(strings.Repeat("=", 80))
 }

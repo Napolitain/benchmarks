@@ -1,9 +1,5 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion, BenchmarkId, Throughput};
-use arrow::array::{ArrayRef, Int64Array, Float64Array, StringArray, BinaryArray, Int32Array};
-use arrow::datatypes::{DataType, Field, Schema};
-use arrow::record_batch::RecordBatch;
-use arrow::ipc::writer::StreamWriter;
-use std::sync::Arc;
+use apache_avro::{Writer, Schema as AvroSchema};
 
 // Include generated protobuf code
 pub mod benchmark {
@@ -16,6 +12,7 @@ pub mod benchmark_capnp {
 }
 
 use benchmark::BenchmarkData as ProtoBenchmarkData;
+use fory_derive::Fory;
 
 // Generate test data
 fn generate_test_data(size: usize) -> Vec<TestRecord> {
@@ -30,7 +27,7 @@ fn generate_test_data(size: usize) -> Vec<TestRecord> {
         .collect()
 }
 
-#[derive(Clone)]
+#[derive(Clone, Fory)]
 struct TestRecord {
     id: i64,
     name: String,
@@ -39,59 +36,42 @@ struct TestRecord {
     data: Vec<u8>,
 }
 
-// Arrow serialization
-fn benchmark_arrow(records: &[TestRecord]) -> Vec<u8> {
-    // Create arrays for all fields
-    let ids: Int64Array = records.iter().map(|r| Some(r.id)).collect();
-    let names: StringArray = records.iter().map(|r| Some(r.name.as_str())).collect();
-    let values: Float64Array = records.iter().map(|r| Some(r.value)).collect();
+// Avro serialization
+fn benchmark_avro(records: &[TestRecord]) -> Vec<u8> {
+    use apache_avro::types::{Record, Value};
     
-    // Create ListArray for numbers field
-    let numbers_field = Arc::new(Field::new("item", DataType::Int32, false));
-    let mut numbers_builder = arrow::array::ListBuilder::new(Int32Array::builder(0)).with_field(numbers_field);
-    for record in records {
-        let int_builder = numbers_builder.values();
-        for &num in &record.numbers {
-            int_builder.append_value(num);
-        }
-        numbers_builder.append(true);
-    }
-    let numbers_array = numbers_builder.finish();
-    
-    // Create BinaryArray for data field
-    let data_array: BinaryArray = records.iter().map(|r| Some(r.data.as_slice())).collect();
-    
-    // Create schema
-    let schema = Schema::new(vec![
-        Field::new("id", DataType::Int64, false),
-        Field::new("name", DataType::Utf8, false),
-        Field::new("value", DataType::Float64, false),
-        Field::new("numbers", DataType::List(Arc::new(Field::new("item", DataType::Int32, false))), false),
-        Field::new("data", DataType::Binary, false),
-    ]);
-    
-    // Create record batch
-    let batch = RecordBatch::try_new(
-        Arc::new(schema.clone()),
-        vec![
-            Arc::new(ids) as ArrayRef,
-            Arc::new(names) as ArrayRef,
-            Arc::new(values) as ArrayRef,
-            Arc::new(numbers_array) as ArrayRef,
-            Arc::new(data_array) as ArrayRef,
-        ],
-    )
-    .unwrap();
-    
-    // Serialize
-    let mut buffer = Vec::new();
+    let schema_str = r#"
     {
-        let mut writer = StreamWriter::try_new(&mut buffer, &schema).unwrap();
-        writer.write(&batch).unwrap();
-        writer.finish().unwrap();
+      "type": "record",
+      "name": "BenchmarkData",
+      "namespace": "benchmark",
+      "fields": [
+        {"name": "id", "type": "long"},
+        {"name": "name", "type": "string"},
+        {"name": "value", "type": "double"},
+        {"name": "numbers", "type": {"type": "array", "items": "int"}},
+        {"name": "data", "type": "bytes"}
+      ]
+    }
+    "#;
+    
+    let schema = AvroSchema::parse_str(schema_str).unwrap();
+    let mut writer = Writer::new(&schema, Vec::new());
+    
+    for record in records {
+        let mut avro_record = Record::new(&schema).unwrap();
+        avro_record.put("id", Value::Long(record.id));
+        avro_record.put("name", Value::String(record.name.clone()));
+        avro_record.put("value", Value::Double(record.value));
+        avro_record.put("numbers", Value::Array(
+            record.numbers.iter().map(|&n| Value::Int(n)).collect()
+        ));
+        avro_record.put("data", Value::Bytes(record.data.clone()));
+        
+        writer.append(avro_record).unwrap();
     }
     
-    buffer
+    writer.into_inner().unwrap()
 }
 
 // Protobuf serialization
@@ -138,9 +118,16 @@ fn benchmark_capnproto(records: &[TestRecord]) -> Vec<u8> {
         }
         
         let encoded = serialize::write_message_to_words(&message);
+    buffer
+}
+
+// Fory serialization
+fn benchmark_fory(records: &[TestRecord]) -> Vec<u8> {
+    let mut buffer = Vec::new();
+    for record in records {
+        let encoded = fory::serialize(record).unwrap();
         buffer.extend_from_slice(&encoded);
     }
-    
     buffer
 }
 
@@ -155,9 +142,9 @@ fn encoding_benchmarks(c: &mut Criterion) {
         
         group.throughput(Throughput::Bytes(data_size as u64));
         
-        group.bench_with_input(BenchmarkId::new("Arrow", size), &records, |b, records| {
+        group.bench_with_input(BenchmarkId::new("Avro", size), &records, |b, records| {
             b.iter(|| {
-                let encoded = benchmark_arrow(black_box(records));
+                let encoded = benchmark_avro(black_box(records));
                 black_box(encoded)
             });
         });
@@ -172,6 +159,13 @@ fn encoding_benchmarks(c: &mut Criterion) {
         group.bench_with_input(BenchmarkId::new("CapnProto", size), &records, |b, records| {
             b.iter(|| {
                 let encoded = benchmark_capnproto(black_box(records));
+                black_box(encoded)
+            });
+        });
+
+        group.bench_with_input(BenchmarkId::new("Fory", size), &records, |b, records| {
+            b.iter(|| {
+                let encoded = benchmark_fory(black_box(records));
                 black_box(encoded)
             });
         });

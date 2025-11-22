@@ -1,0 +1,9 @@
+{
+  "name": "startup-benchmarks",
+  "version": "1.0.0",
+  "description": "Benchmark programs for bubblesort and rectangle area calculation",
+  "dependencies": {
+    "js-yaml": "^4.1.0",
+    "commander": "^11.1.0"
+  }
+}

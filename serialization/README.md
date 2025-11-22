@@ -1,12 +1,12 @@
 # Serialization Benchmarks
 
-This Rust CLI tool benchmarks various serialization formats to compare their performance and encoding efficiency.
+Rust benchmarks comparing serialization formats for performance and encoding efficiency.
 
 ## Formats Tested
 
-- **Apache Arrow**: A columnar memory format optimized for analytics
 - **Protocol Buffers v3**: Google's language-neutral data serialization format
-- **Cap'n Proto**: A fast data interchange format with zero-copy deserialization
+- **Apache Avro**: Row-oriented data serialization framework
+- **Cap'n Proto**: Fast data interchange format with zero-copy deserialization
 
 ## Metrics
 
@@ -16,17 +16,7 @@ The benchmarks measure:
 
 ## Usage
 
-### Quick Test
-
-Run the CLI tool for a quick benchmark comparison:
-
-```bash
-cargo run --release
-```
-
-### Detailed Benchmarks
-
-Run comprehensive benchmarks using Criterion:
+Run benchmarks using Criterion:
 
 ```bash
 cargo bench
@@ -56,7 +46,7 @@ cargo build --release
 ## Development
 
 The project structure:
-- `src/main.rs`: CLI tool for quick benchmarks
+- `src/lib.rs`: Library with generated code modules
 - `benches/serialization_bench.rs`: Criterion benchmarks
-- `proto/`: Protocol definitions for Protobuf and Cap'n Proto
+- `proto/`: Protocol definitions (Protobuf, Avro, Cap'n Proto)
 - `build.rs`: Build script for compiling schemas
