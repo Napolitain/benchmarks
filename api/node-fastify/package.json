@@ -1,0 +1,15 @@
+{
+  "name": "node-fastify-helloworld",
+  "version": "1.0.0",
+  "description": "Hello World HTTP API for benchmarking",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": ["benchmark", "http", "api"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "fastify": "^5.0.0"
+  }
+}

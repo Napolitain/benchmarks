@@ -67,3 +67,33 @@ serialization/Cargo.lock
 
 # Temp files
 /tmp/bench_*.txt
+
+# Rust target directories
+**/target/
+
+# Go binaries
+api/grpc/go-grpc/go-grpc
+api/go-fasthttp/helloworld-fasthttp
+
+# rewrk benchmark tool
+api/rewrk
+
+# FFI build artifacts
+ffi/__pycache__/
+ffi/*.class
+ffi/*.so
+ffi/*.cxx
+ffi/bench_go
+ffi/bench_go_cgo
+ffi/bench_native
+ffi/bench_rust
+
+# HTTP load test
+api/http_load_test
+
+# uv lock files
+*.lock
+!package-lock.json
+
+# Generated protobuf files
+*.pb.go

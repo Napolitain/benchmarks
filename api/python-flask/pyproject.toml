@@ -1,0 +1,27 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "flask-api-bench"
+version = "0.1.0"
+description = "A simple Flask application for performance benchmarking"
+authors = [
+    {name = "Napolitain", email = "napolitain@example.com"},
+]
+requires-python = ">=3.8"
+keywords = ["flask", "gunicorn", "benchmarking"]
+
+# Dependencies for the application to run
+dependencies = [
+    "flask>=3.0.0",
+    "orjson>=3.9.10",
+    "gunicorn>=21.0.0",
+]
+
+[project.optional-dependencies]
+dev = []
+server = []
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]

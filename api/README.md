@@ -26,6 +26,13 @@ pip install -r requirements.txt
 python main.py
 ```
 
+### python-flask (Python Flask)
+```bash
+cd python-flask
+pip install -r requirements.txt
+python main.py
+```
+
 ### node-http (Node.js http)
 ```bash
 cd node-http
@@ -43,6 +50,12 @@ nginx -p . -c nginx.conf
 ```bash
 # Built by benchrunner, run from bin directory
 ../../bin/HelloWorldBenchmark
+```
+
+### java-springboot (Java Spring Boot)
+```bash
+cd java-springboot
+mvn spring-boot:run
 ```
 
 ## Testing
