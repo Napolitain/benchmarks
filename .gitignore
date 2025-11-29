@@ -83,10 +83,15 @@ ffi/__pycache__/
 ffi/*.class
 ffi/*.so
 ffi/*.cxx
+ffi/*.o
 ffi/bench_go
 ffi/bench_go_cgo
+ffi/bench_go_bin
 ffi/bench_native
 ffi/bench_rust
+ffi/bench_rust_bin
+ffi/bench_zig
+ffi/bench_zig_bin
 
 # HTTP load test
 api/http_load_test
