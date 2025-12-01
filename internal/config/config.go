@@ -29,7 +29,7 @@ func GetServers(baseDir string) []ServerConfig {
 		{
 			Name:     "python-fastapi",
 			Dir:      filepath.Join(baseDir, "api", "python-fastapi"),
-			StartCmd: []string{"python", "main.py"},
+			StartCmd: []string{"python3", "main.py"},
 			Port:     8080,
 		},
 		{

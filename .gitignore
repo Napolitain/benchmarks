@@ -46,6 +46,7 @@ api/nginx-static/proxy_temp/
 api/nginx-static/fastcgi_temp/
 api/nginx-static/uwsgi_temp/
 api/nginx-static/scgi_temp/
+api/nginx-static/nginx.pid
 
 # Go
 go.sum
@@ -84,6 +85,7 @@ ffi/*.class
 ffi/*.so
 ffi/*.cxx
 ffi/*.o
+ffi/*.py
 ffi/bench_go
 ffi/bench_go_cgo
 ffi/bench_go_bin
@@ -92,6 +94,8 @@ ffi/bench_rust
 ffi/bench_rust_bin
 ffi/bench_zig
 ffi/bench_zig_bin
+ffi/**/main
+ffi/**/*.o
 
 # HTTP load test
 api/http_load_test

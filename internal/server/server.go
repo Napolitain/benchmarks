@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"syscall"
 	"time"
 
 	"github.com/benchmarks/internal/config"
@@ -33,6 +34,8 @@ func (s *Server) Start() error {
 	s.cmd.Dir = s.config.Dir
 	s.cmd.Stdout = os.Stdout
 	s.cmd.Stderr = os.Stderr
+	// Start process in its own process group so we can kill all children
+	s.cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 	if err := s.cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start %s: %w", s.config.Name, err)
@@ -65,10 +68,18 @@ func (s *Server) Stop() error {
 		return nil
 	}
 
-	// Kill process (Linux)
-	s.cmd.Process.Kill()
+	// Kill the entire process group (negative PID kills all processes in the group)
+	pgid, err := syscall.Getpgid(s.cmd.Process.Pid)
+	if err == nil {
+		syscall.Kill(-pgid, syscall.SIGKILL)
+	} else {
+		// Fallback to killing just the process
+		s.cmd.Process.Kill()
+	}
 	s.cmd.Wait()
-	time.Sleep(2 * time.Second)
+
+	// Wait for port to be released
+	s.waitForPortRelease(3 * time.Second)
 	return nil
 }
 
@@ -86,4 +97,19 @@ func (s *Server) waitForServer(timeout time.Duration) error {
 	}
 
 	return fmt.Errorf("timeout waiting for server on port %d", s.config.Port)
+}
+
+func (s *Server) waitForPortRelease(timeout time.Duration) {
+	deadline := time.Now().Add(timeout)
+	addr := fmt.Sprintf("localhost:%d", s.config.Port)
+
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", addr, 100*time.Millisecond)
+		if err != nil {
+			// Port is released
+			return
+		}
+		conn.Close()
+		time.Sleep(100 * time.Millisecond)
+	}
 }

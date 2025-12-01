@@ -67,15 +67,7 @@ func main() {
 	runServerCmd.Flags().IntVarP(&pipeline, "pipeline", "p", 1, "Pipeline factor")
 	runServerCmd.Flags().IntVarP(&duration, "duration", "d", 10, "Duration in seconds")
 
-	// Run startup subcommand
-	runStartupCmd := &cobra.Command{
-		Use:   "startup",
-		Short: "Run startup time benchmarks",
-		Long:  "Run startup time benchmarks for all languages using poop (or hyperfine as fallback)",
-		RunE:  runStartupBenchmarks,
-	}
-
-	runCmd.AddCommand(runServerCmd, runStartupCmd)
+	runCmd.AddCommand(runServerCmd)
 
 	// Run helloworld subcommand
 	runHelloworldCmd := &cobra.Command{
@@ -96,8 +88,8 @@ Modes:
 
 	runCmd.AddCommand(runHelloworldCmd)
 
-	// Run startup-compute subcommand
-	runStartupComputeCmd := &cobra.Command{
+	// Run compute subcommand
+	runComputeCmd := &cobra.Command{
 		Use:   "compute [language]",
 		Short: "Run compute (bubblesort) benchmarks",
 		Long: `Compile and benchmark bubblesort programs in various languages using poop (or hyperfine as fallback).
@@ -107,16 +99,16 @@ Modes:
   full-cold  - Benchmark compilation + execution (cold builds, no cache)
   full-hot   - Benchmark compilation + execution (hot builds, cache allowed)
   exec       - Benchmark execution time only (pre-compiled)`,
-		RunE: runStartupComputeBenchmarks,
+		RunE: runComputeBenchmarks,
 	}
-	runStartupComputeCmd.Flags().IntVarP(&warmup, "warmup", "w", 3, "Number of warmup runs")
-	runStartupComputeCmd.Flags().IntVarP(&runs, "runs", "r", 10, "Number of benchmark runs")
-	runStartupComputeCmd.Flags().StringVarP(&benchMode, "mode", "m", "exec", "Benchmark mode: compile, full-cold, full-hot, exec")
+	runComputeCmd.Flags().IntVarP(&warmup, "warmup", "w", 3, "Number of warmup runs")
+	runComputeCmd.Flags().IntVarP(&runs, "runs", "r", 10, "Number of benchmark runs")
+	runComputeCmd.Flags().StringVarP(&benchMode, "mode", "m", "exec", "Benchmark mode: compile, full-cold, full-hot, exec")
 
-	runCmd.AddCommand(runStartupComputeCmd)
+	runCmd.AddCommand(runComputeCmd)
 
-	// Run startup-memory subcommand
-	runStartupMemoryCmd := &cobra.Command{
+	// Run cli subcommand
+	runCLICmd := &cobra.Command{
 		Use:   "cli [language]",
 		Short: "Run CLI (rectangle YAML parsing) benchmarks",
 		Long: `Compile and benchmark rectangle YAML parsing programs in various languages using poop (or hyperfine as fallback).
@@ -126,19 +118,23 @@ Modes:
   full-cold  - Benchmark compilation + execution (cold builds, no cache)
   full-hot   - Benchmark compilation + execution (hot builds, cache allowed)
   exec       - Benchmark execution time only (pre-compiled)`,
-		RunE: runStartupMemoryBenchmarks,
+		RunE: runCLIBenchmarks,
 	}
-	runStartupMemoryCmd.Flags().IntVarP(&warmup, "warmup", "w", 3, "Number of warmup runs")
-	runStartupMemoryCmd.Flags().IntVarP(&runs, "runs", "r", 10, "Number of benchmark runs")
-	runStartupMemoryCmd.Flags().StringVarP(&benchMode, "mode", "m", "exec", "Benchmark mode: compile, full-cold, full-hot, exec")
+	runCLICmd.Flags().IntVarP(&warmup, "warmup", "w", 3, "Number of warmup runs")
+	runCLICmd.Flags().IntVarP(&runs, "runs", "r", 10, "Number of benchmark runs")
+	runCLICmd.Flags().StringVarP(&benchMode, "mode", "m", "exec", "Benchmark mode: compile, full-cold, full-hot, exec")
 
-	runCmd.AddCommand(runStartupMemoryCmd)
+	runCmd.AddCommand(runCLICmd)
 
 	// Run ffi subcommand
 	runFFICmd := &cobra.Command{
 		Use:   "ffi [language]",
-		Short: "Run FFI benchmarks",
+		Short: "Run FFI benchmarks (fast_sum and slow_compute)",
 		Long: `Compile and benchmark FFI programs in various languages using poop (or hyperfine as fallback).
+
+Runs two sub-benchmarks sequentially:
+  - fast_sum: measures FFI call overhead (1M calls of a simple sum function)
+  - slow_compute: measures compute-heavy FFI (100 calls with 1M iterations each)
 
 Modes:
   compile    - Benchmark compilation time only (cold builds)
@@ -293,58 +289,6 @@ func printSummary(results []*benchmark.Result) {
 	fmt.Println(strings.Repeat("=", 80))
 }
 
-func runStartupBenchmarks(cmd *cobra.Command, args []string) error {
-	// Check for benchmark tool
-	benchTool, err := getBenchmarkTool()
-	if err != nil {
-		return err
-	}
-	
-	fmt.Printf("Running startup time benchmarks with %s...\n", benchTool)
-	fmt.Println(strings.Repeat("=", 80))
-	
-	// Define benchmark commands
-	computeDir := filepath.Join(baseDir, "compute")
-	cliDir := filepath.Join(baseDir, "cli")
-	benchmarks := []struct {
-		name string
-		cmd  string
-	}{
-		{"Go Bubblesort", "cd " + computeDir + " && go run bubblesort.go"},
-		{"Node Bubblesort", filepath.Join(computeDir, "bubblesort.js")},
-		{"Python Bubblesort", filepath.Join(computeDir, "bubblesort.py")},
-		{"Go Rectangle", "cd " + cliDir + " && go run rectangle.go test_rectangle.yaml"},
-		{"Node Rectangle", filepath.Join(cliDir, "rectangle.js") + " " + filepath.Join(cliDir, "test_rectangle.yaml")},
-		{"Python Rectangle", filepath.Join(cliDir, "rectangle.py") + " " + filepath.Join(cliDir, "test_rectangle.yaml")},
-	}
-	
-	// Build command args based on tool
-	var cmdArgs []string
-	if benchTool == "poop" {
-		for _, b := range benchmarks {
-			cmdArgs = append(cmdArgs, b.cmd)
-		}
-	} else {
-		cmdArgs = append(cmdArgs, "--warmup", "3", "--runs", "10")
-		for _, b := range benchmarks {
-			cmdArgs = append(cmdArgs, "--command-name", b.name, b.cmd)
-		}
-	}
-	
-	// Run benchmark tool
-	benchCmd := exec.Command(benchTool, cmdArgs...)
-	benchCmd.Stdout = os.Stdout
-	benchCmd.Stderr = os.Stderr
-	benchCmd.Dir = baseDir
-	
-	if err := benchCmd.Run(); err != nil {
-		return fmt.Errorf("%s failed: %w", benchTool, err)
-	}
-	
-	fmt.Println(strings.Repeat("=", 80))
-	return nil
-}
-
 func saveResults(results []*benchmark.Result) error {
 	resultsDir := filepath.Join(baseDir, "results")
 	os.MkdirAll(resultsDir, 0755)
@@ -484,68 +428,67 @@ func runHelloworldBenchmarks(cmd *cobra.Command, args []string) error {
 }
 
 // ============================================================================
-// STARTUP-COMPUTE (Bubblesort) Benchmarks
+// COMPUTE (Bubblesort) Benchmarks
 // ============================================================================
 
-func getStartupComputeLanguages(baseDir string) []helloworldLang {
-	dir := filepath.Join(baseDir, "compute")
+func getComputeLanguages(baseDir string) []helloworldLang {
+	computeDir := filepath.Join(baseDir, "compute")
 	return []helloworldLang{
 		{
 			name:       "go",
-			dir:        dir,
-			compileCmd: "go build -ldflags=\"-s -w\" -o bubblesort_bin bubblesort.go",
-			runCmd:     "./bubblesort_bin",
-			binaryPath: "bubblesort_bin",
-			cleanCmd:   "rm -f bubblesort_bin",
-			cleanFiles: []string{"bubblesort_bin"},
+			dir:        filepath.Join(computeDir, "go"),
+			compileCmd: "go build -ldflags=\"-s -w\" -o bubblesort bubblesort.go",
+			runCmd:     "./bubblesort",
+			binaryPath: "bubblesort",
+			cleanCmd:   "rm -f bubblesort",
+			cleanFiles: []string{"bubblesort"},
 		},
 		{
 			name:       "rust",
-			dir:        dir,
-			compileCmd: "rustc -C opt-level=3 -C lto=fat -C target-cpu=native -C strip=symbols -o bubblesort_bin bubblesort.rs",
-			runCmd:     "./bubblesort_bin",
-			binaryPath: "bubblesort_bin",
-			cleanCmd:   "rm -f bubblesort_bin",
-			cleanFiles: []string{"bubblesort_bin"},
+			dir:        filepath.Join(computeDir, "rust"),
+			compileCmd: "rustc -C opt-level=3 -C lto=fat -C target-cpu=native -C strip=symbols -o bubblesort bubblesort.rs",
+			runCmd:     "./bubblesort",
+			binaryPath: "bubblesort",
+			cleanCmd:   "rm -f bubblesort",
+			cleanFiles: []string{"bubblesort"},
 		},
 		{
 			name:       "zig",
-			dir:        dir,
-			compileCmd: "zig build-exe -OReleaseFast -fstrip -femit-bin=bubblesort_bin bubblesort.zig",
-			runCmd:     "./bubblesort_bin",
-			binaryPath: "bubblesort_bin",
-			cleanCmd:   "rm -f bubblesort_bin bubblesort_bin.o",
-			cleanFiles: []string{"bubblesort_bin", "bubblesort_bin.o"},
+			dir:        filepath.Join(computeDir, "zig"),
+			compileCmd: "zig build-exe -OReleaseFast -fstrip -femit-bin=bubblesort bubblesort.zig",
+			runCmd:     "./bubblesort",
+			binaryPath: "bubblesort",
+			cleanCmd:   "rm -f bubblesort bubblesort.o",
+			cleanFiles: []string{"bubblesort", "bubblesort.o"},
 		},
 		{
 			name:   "node",
-			dir:    dir,
+			dir:    filepath.Join(computeDir, "node"),
 			runCmd: "node bubblesort.js",
 		},
 		{
 			name:   "python",
-			dir:    dir,
+			dir:    filepath.Join(computeDir, "python"),
 			runCmd: "python3 bubblesort.py",
 		},
 	}
 }
 
-func runStartupComputeBenchmarks(cmd *cobra.Command, args []string) error {
-	return runGenericBenchmarks("startup-compute", getStartupComputeLanguages(baseDir), args)
+func runComputeBenchmarks(cmd *cobra.Command, args []string) error {
+	return runGenericBenchmarks("compute", getComputeLanguages(baseDir), args)
 }
 
 // ============================================================================
-// STARTUP-MEMORY (Rectangle YAML parsing) Benchmarks
+// CLI (Rectangle YAML parsing) Benchmarks
 // ============================================================================
 
-func getStartupMemoryLanguages(baseDir string) []helloworldLang {
-	dir := filepath.Join(baseDir, "cli")
-	cppDir := filepath.Join(dir, "cpp")
-	yamlFile := filepath.Join(dir, "test_rectangle.yaml")
+func getCLILanguages(baseDir string) []helloworldLang {
+	cliDir := filepath.Join(baseDir, "cli")
+	yamlFile := "../test_rectangle.yaml"
 	return []helloworldLang{
 		{
 			name:       "cpp",
-			dir:        cppDir,
+			dir:        filepath.Join(cliDir, "cpp"),
 			compileCmd: "cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j$(nproc)",
 			runCmd:     "./build/rectangle " + yamlFile,
 			binaryPath: "build/rectangle",
@@ -554,16 +497,16 @@ func getStartupMemoryLanguages(baseDir string) []helloworldLang {
 		},
 		{
 			name:       "go",
-			dir:        dir,
-			compileCmd: "go build -ldflags=\"-s -w\" -o rectangle_bin rectangle.go",
-			runCmd:     "./rectangle_bin " + yamlFile,
-			binaryPath: "rectangle_bin",
-			cleanCmd:   "rm -f rectangle_bin",
-			cleanFiles: []string{"rectangle_bin"},
+			dir:        filepath.Join(cliDir, "go"),
+			compileCmd: "go build -ldflags=\"-s -w\" -o rectangle rectangle.go",
+			runCmd:     "./rectangle " + yamlFile,
+			binaryPath: "rectangle",
+			cleanCmd:   "rm -f rectangle",
+			cleanFiles: []string{"rectangle"},
 		},
 		{
 			name:       "rust",
-			dir:        dir,
+			dir:        filepath.Join(cliDir, "rust"),
 			compileCmd: "cargo build --release",
 			runCmd:     "./target/release/rectangle " + yamlFile,
 			binaryPath: "target/release/rectangle",
@@ -572,88 +515,129 @@ func getStartupMemoryLanguages(baseDir string) []helloworldLang {
 		},
 		{
 			name:       "zig",
-			dir:        dir,
-			compileCmd: "zig build-exe -OReleaseFast -fstrip -femit-bin=rectangle_bin rectangle.zig",
-			runCmd:     "./rectangle_bin " + yamlFile,
-			binaryPath: "rectangle_bin",
-			cleanCmd:   "rm -f rectangle_bin rectangle_bin.o",
-			cleanFiles: []string{"rectangle_bin", "rectangle_bin.o"},
+			dir:        filepath.Join(cliDir, "zig"),
+			compileCmd: "zig build-exe -OReleaseFast -fstrip -femit-bin=rectangle rectangle.zig",
+			runCmd:     "./rectangle " + yamlFile,
+			binaryPath: "rectangle",
+			cleanCmd:   "rm -f rectangle rectangle.o",
+			cleanFiles: []string{"rectangle", "rectangle.o"},
 		},
 		{
 			name:   "node",
-			dir:    dir,
+			dir:    filepath.Join(cliDir, "node"),
 			runCmd: "node rectangle.js " + yamlFile,
 		},
 		{
 			name:   "python",
-			dir:    dir,
+			dir:    filepath.Join(cliDir, "python"),
 			runCmd: "python3 rectangle.py " + yamlFile,
 		},
 	}
 }
 
-func runStartupMemoryBenchmarks(cmd *cobra.Command, args []string) error {
-	return runGenericBenchmarks("startup-memory", getStartupMemoryLanguages(baseDir), args)
+func runCLIBenchmarks(cmd *cobra.Command, args []string) error {
+	return runGenericBenchmarks("cli", getCLILanguages(baseDir), args)
 }
 
 // ============================================================================
 // FFI Benchmarks
 // ============================================================================
 
-func getFFILanguages(baseDir string) []helloworldLang {
-	dir := filepath.Join(baseDir, "ffi")
+func getFFIFastSumLanguages(baseDir string) []helloworldLang {
+	ffiDir := filepath.Join(baseDir, "ffi", "fast_sum")
 	return []helloworldLang{
 		{
-			name:       "native",
-			dir:        dir,
-			compileCmd: "g++ -O3 -flto -march=native -DNDEBUG -s -o bench_native bench_native.cpp hotpath.cpp",
-			runCmd:     "./bench_native",
-			binaryPath: "bench_native",
-			cleanCmd:   "rm -f bench_native",
-			cleanFiles: []string{"bench_native"},
-		},
-		{
-			name:       "go-cgo",
-			dir:        dir,
-			compileCmd: "go build -ldflags=\"-s -w\" -o bench_go_bin bench_go_cgo.go",
-			runCmd:     "LD_LIBRARY_PATH=. ./bench_go_bin",
-			binaryPath: "bench_go_bin",
-			cleanCmd:   "rm -f bench_go_bin",
-			cleanFiles: []string{"bench_go_bin"},
+			name:       "cpp",
+			dir:        filepath.Join(ffiDir, "cpp"),
+			compileCmd: "g++ -O3 -flto -march=native -DNDEBUG -s -o main main.cpp ../hotpath.cpp",
+			runCmd:     "./main",
+			binaryPath: "main",
+			cleanCmd:   "rm -f main",
+			cleanFiles: []string{"main"},
 		},
 		{
 			name:       "rust",
-			dir:        dir,
-			compileCmd: "rustc -C opt-level=3 -C lto=fat -C target-cpu=native -C strip=symbols -o bench_rust_bin bench_rust.rs",
-			runCmd:     "./bench_rust_bin",
-			binaryPath: "bench_rust_bin",
-			cleanCmd:   "rm -f bench_rust_bin",
-			cleanFiles: []string{"bench_rust_bin"},
+			dir:        filepath.Join(ffiDir, "rust"),
+			compileCmd: "rustc -C opt-level=3 -C lto=fat -C target-cpu=native -C strip=symbols -o main main.rs",
+			runCmd:     "./main",
+			binaryPath: "main",
+			cleanCmd:   "rm -f main",
+			cleanFiles: []string{"main"},
 		},
 		{
 			name:       "zig",
-			dir:        dir,
-			compileCmd: "zig build-exe -OReleaseFast -fstrip -femit-bin=bench_zig_bin bench_zig.zig",
-			runCmd:     "./bench_zig_bin",
-			binaryPath: "bench_zig_bin",
-			cleanCmd:   "rm -f bench_zig_bin bench_zig_bin.o",
-			cleanFiles: []string{"bench_zig_bin", "bench_zig_bin.o"},
+			dir:        filepath.Join(ffiDir, "zig"),
+			compileCmd: "zig build-exe -OReleaseFast -fstrip -femit-bin=main main.zig",
+			runCmd:     "./main",
+			binaryPath: "main",
+			cleanCmd:   "rm -f main main.o",
+			cleanFiles: []string{"main", "main.o"},
 		},
 		{
 			name:   "python",
-			dir:    dir,
-			runCmd: "python3 bench_python.py",
+			dir:    filepath.Join(ffiDir, "python"),
+			runCmd: "python3 main.py",
+		},
+	}
+}
+
+func getFFISlowComputeLanguages(baseDir string) []helloworldLang {
+	ffiDir := filepath.Join(baseDir, "ffi", "slow_compute")
+	return []helloworldLang{
+		{
+			name:       "cpp",
+			dir:        filepath.Join(ffiDir, "cpp"),
+			compileCmd: "g++ -O3 -flto -march=native -DNDEBUG -s -o main main.cpp ../hotpath.cpp",
+			runCmd:     "./main",
+			binaryPath: "main",
+			cleanCmd:   "rm -f main",
+			cleanFiles: []string{"main"},
 		},
 		{
-			name:   "node",
-			dir:    dir,
-			runCmd: "npx ts-node bench_node.ts",
+			name:       "rust",
+			dir:        filepath.Join(ffiDir, "rust"),
+			compileCmd: "rustc -C opt-level=3 -C lto=fat -C target-cpu=native -C strip=symbols -o main main.rs",
+			runCmd:     "./main",
+			binaryPath: "main",
+			cleanCmd:   "rm -f main",
+			cleanFiles: []string{"main"},
+		},
+		{
+			name:       "zig",
+			dir:        filepath.Join(ffiDir, "zig"),
+			compileCmd: "zig build-exe -OReleaseFast -fstrip -femit-bin=main main.zig",
+			runCmd:     "./main",
+			binaryPath: "main",
+			cleanCmd:   "rm -f main main.o",
+			cleanFiles: []string{"main", "main.o"},
+		},
+		{
+			name:   "python",
+			dir:    filepath.Join(ffiDir, "python"),
+			runCmd: "python3 main.py",
 		},
 	}
 }
 
 func runFFIBenchmarks(cmd *cobra.Command, args []string) error {
-	return runGenericBenchmarks("ffi", getFFILanguages(baseDir), args)
+	fmt.Println("Running FFI benchmarks (two sub-benchmarks)")
+	fmt.Println(strings.Repeat("=", 80))
+
+	// Run fast_sum benchmark
+	fmt.Println("\n[1/2] fast_sum - FFI call overhead benchmark")
+	fmt.Println(strings.Repeat("-", 80))
+	if err := runGenericBenchmarks("ffi/fast_sum", getFFIFastSumLanguages(baseDir), args); err != nil {
+		return err
+	}
+
+	// Run slow_compute benchmark
+	fmt.Println("\n[2/2] slow_compute - compute-heavy FFI benchmark")
+	fmt.Println(strings.Repeat("-", 80))
+	if err := runGenericBenchmarks("ffi/slow_compute", getFFISlowComputeLanguages(baseDir), args); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // ============================================================================
