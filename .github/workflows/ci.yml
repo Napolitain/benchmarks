@@ -1,0 +1,420 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  build-benchrunner:
+    name: Build benchrunner
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      
+      - name: Build benchrunner
+        run: go build -o benchrunner ./cmd/benchrunner
+
+      - name: Upload benchrunner
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchrunner
+          path: benchrunner
+
+  verify-helloworld:
+    name: Verify helloworld builds
+    runs-on: ubuntu-latest
+    needs: build-benchrunner
+    strategy:
+      fail-fast: false
+      matrix:
+        lang:
+          - name: c-cmake
+            dir: helloworld/c
+            compile: cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
+            run: ./build/hello
+            clean: rm -rf build
+          - name: c-direct
+            dir: helloworld/c
+            compile: gcc -O3 -flto -march=native -DNDEBUG -s -o hello main.c
+            run: ./hello
+            clean: rm -f hello
+          - name: cpp-cmake
+            dir: helloworld/cpp
+            compile: cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build
+            run: ./build/hello
+            clean: rm -rf build
+          - name: cpp-direct
+            dir: helloworld/cpp
+            compile: g++ -O3 -flto -march=native -DNDEBUG -s -o hello main.cpp
+            run: ./hello
+            clean: rm -f hello
+          - name: go
+            dir: helloworld/go
+            compile: go build -ldflags="-s -w" -o hello main.go
+            run: ./hello
+            clean: rm -f hello
+          - name: rust-direct
+            dir: helloworld/rust
+            compile: rustc -C opt-level=3 -C lto=fat -C target-cpu=native -C strip=symbols -o hello src/main.rs
+            run: ./hello
+            clean: rm -f hello
+          - name: zig-direct
+            dir: helloworld/zig
+            compile: zig build-exe -OReleaseFast -fstrip -femit-bin=hello main.zig
+            run: ./hello
+            clean: rm -f hello hello.o
+          - name: node-direct
+            dir: helloworld/node
+            compile: ''
+            run: node main.js
+            clean: ''
+          - name: python
+            dir: helloworld/python
+            compile: ''
+            run: python3 main.py
+            clean: ''
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Go
+        if: matrix.lang.name == 'go'
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      
+      - name: Set up Rust
+        if: startsWith(matrix.lang.name, 'rust')
+        uses: dtolnay/rust-action@stable
+      
+      - name: Set up Zig
+        if: startsWith(matrix.lang.name, 'zig')
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.13.0
+      
+      - name: Set up Node.js
+        if: startsWith(matrix.lang.name, 'node')
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Set up Python
+        if: matrix.lang.name == 'python'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Compile ${{ matrix.lang.name }}
+        if: matrix.lang.compile != ''
+        working-directory: ${{ matrix.lang.dir }}
+        run: ${{ matrix.lang.compile }}
+      
+      - name: Run ${{ matrix.lang.name }}
+        working-directory: ${{ matrix.lang.dir }}
+        run: ${{ matrix.lang.run }}
+      
+      - name: Cleanup ${{ matrix.lang.name }}
+        if: matrix.lang.clean != ''
+        working-directory: ${{ matrix.lang.dir }}
+        run: ${{ matrix.lang.clean }}
+
+  verify-compute:
+    name: Verify compute builds
+    runs-on: ubuntu-latest
+    needs: build-benchrunner
+    strategy:
+      fail-fast: false
+      matrix:
+        lang:
+          - name: go
+            dir: compute/go
+            compile: go build -ldflags="-s -w" -o bubblesort bubblesort.go
+            run: ./bubblesort
+            clean: rm -f bubblesort
+          - name: rust
+            dir: compute/rust
+            compile: rustc -C opt-level=3 -C lto=fat -C target-cpu=native -C strip=symbols -o bubblesort bubblesort.rs
+            run: ./bubblesort
+            clean: rm -f bubblesort
+          - name: zig
+            dir: compute/zig
+            compile: zig build-exe -OReleaseFast -fstrip -femit-bin=bubblesort bubblesort.zig
+            run: ./bubblesort
+            clean: rm -f bubblesort bubblesort.o
+          - name: node
+            dir: compute/node
+            compile: ''
+            run: node bubblesort.js
+            clean: ''
+          - name: python
+            dir: compute/python
+            compile: ''
+            run: python3 bubblesort.py
+            clean: ''
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Go
+        if: matrix.lang.name == 'go'
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      
+      - name: Set up Rust
+        if: matrix.lang.name == 'rust'
+        uses: dtolnay/rust-action@stable
+      
+      - name: Set up Zig
+        if: matrix.lang.name == 'zig'
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.13.0
+      
+      - name: Set up Node.js
+        if: matrix.lang.name == 'node'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Set up Python
+        if: matrix.lang.name == 'python'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Compile ${{ matrix.lang.name }}
+        if: matrix.lang.compile != ''
+        working-directory: ${{ matrix.lang.dir }}
+        run: ${{ matrix.lang.compile }}
+      
+      - name: Run ${{ matrix.lang.name }}
+        working-directory: ${{ matrix.lang.dir }}
+        run: ${{ matrix.lang.run }}
+      
+      - name: Cleanup ${{ matrix.lang.name }}
+        if: matrix.lang.clean != ''
+        working-directory: ${{ matrix.lang.dir }}
+        run: ${{ matrix.lang.clean }}
+
+  verify-cli:
+    name: Verify CLI builds
+    runs-on: ubuntu-latest
+    needs: build-benchrunner
+    strategy:
+      fail-fast: false
+      matrix:
+        lang:
+          - name: cpp
+            dir: cli/cpp
+            compile: cmake -B build -DCMAKE_BUILD_TYPE=Release && cmake --build build -j$(nproc)
+            run: ./build/rectangle ../test_rectangle.yaml
+            clean: rm -rf build
+          - name: go
+            dir: cli/go
+            compile: go build -ldflags="-s -w" -o rectangle rectangle.go
+            run: ./rectangle ../test_rectangle.yaml
+            clean: rm -f rectangle
+          - name: rust
+            dir: cli/rust
+            compile: cargo build --release
+            run: ./target/release/rectangle ../test_rectangle.yaml
+            clean: cargo clean
+          - name: zig
+            dir: cli/zig
+            compile: zig build-exe -OReleaseFast -fstrip -femit-bin=rectangle rectangle.zig
+            run: ./rectangle ../test_rectangle.yaml
+            clean: rm -f rectangle rectangle.o
+          - name: node
+            dir: cli/node
+            compile: ''
+            run: node rectangle.js ../test_rectangle.yaml
+            clean: ''
+          - name: python
+            dir: cli/python
+            compile: ''
+            run: python3 rectangle.py ../test_rectangle.yaml
+            clean: ''
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Go
+        if: matrix.lang.name == 'go'
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      
+      - name: Set up Rust
+        if: matrix.lang.name == 'rust'
+        uses: dtolnay/rust-action@stable
+      
+      - name: Set up Zig
+        if: matrix.lang.name == 'zig'
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.13.0
+      
+      - name: Set up Node.js
+        if: matrix.lang.name == 'node'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Set up Python
+        if: matrix.lang.name == 'python'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install Python dependencies
+        if: matrix.lang.name == 'python'
+        run: pip install pyyaml
+      
+      - name: Install Node dependencies
+        if: matrix.lang.name == 'node'
+        working-directory: cli/node
+        run: npm install js-yaml 2>/dev/null || true
+      
+      - name: Compile ${{ matrix.lang.name }}
+        if: matrix.lang.compile != ''
+        working-directory: ${{ matrix.lang.dir }}
+        run: ${{ matrix.lang.compile }}
+      
+      - name: Run ${{ matrix.lang.name }}
+        working-directory: ${{ matrix.lang.dir }}
+        run: ${{ matrix.lang.run }}
+      
+      - name: Cleanup ${{ matrix.lang.name }}
+        if: matrix.lang.clean != ''
+        working-directory: ${{ matrix.lang.dir }}
+        run: ${{ matrix.lang.clean }}
+
+  verify-ffi-fast-sum:
+    name: Verify FFI fast_sum builds
+    runs-on: ubuntu-latest
+    needs: build-benchrunner
+    strategy:
+      fail-fast: false
+      matrix:
+        lang:
+          - name: cpp
+            dir: ffi/fast_sum/cpp
+            compile: g++ -O3 -flto -march=native -DNDEBUG -s -o main main.cpp ../hotpath.cpp
+            run: ./main
+            clean: rm -f main
+          - name: rust
+            dir: ffi/fast_sum/rust
+            compile: rustc -C opt-level=3 -C lto=fat -C target-cpu=native -C strip=symbols -o main main.rs
+            run: ./main
+            clean: rm -f main
+          - name: zig
+            dir: ffi/fast_sum/zig
+            compile: zig build-exe -OReleaseFast -fstrip -femit-bin=main main.zig
+            run: ./main
+            clean: rm -f main main.o
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Rust
+        if: matrix.lang.name == 'rust'
+        uses: dtolnay/rust-action@stable
+      
+      - name: Set up Zig
+        if: matrix.lang.name == 'zig'
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.13.0
+      
+      - name: Compile ${{ matrix.lang.name }}
+        working-directory: ${{ matrix.lang.dir }}
+        run: ${{ matrix.lang.compile }}
+      
+      - name: Run ${{ matrix.lang.name }}
+        working-directory: ${{ matrix.lang.dir }}
+        run: ${{ matrix.lang.run }}
+      
+      - name: Cleanup ${{ matrix.lang.name }}
+        working-directory: ${{ matrix.lang.dir }}
+        run: ${{ matrix.lang.clean }}
+
+  verify-ffi-slow-compute:
+    name: Verify FFI slow_compute builds
+    runs-on: ubuntu-latest
+    needs: build-benchrunner
+    strategy:
+      fail-fast: false
+      matrix:
+        lang:
+          - name: cpp
+            dir: ffi/slow_compute/cpp
+            compile: g++ -O3 -flto -march=native -DNDEBUG -s -o main main.cpp ../hotpath.cpp
+            run: ./main
+            clean: rm -f main
+          - name: rust
+            dir: ffi/slow_compute/rust
+            compile: rustc -C opt-level=3 -C lto=fat -C target-cpu=native -C strip=symbols -o main main.rs
+            run: ./main
+            clean: rm -f main
+          - name: zig
+            dir: ffi/slow_compute/zig
+            compile: zig build-exe -OReleaseFast -fstrip -femit-bin=main main.zig
+            run: ./main
+            clean: rm -f main main.o
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Rust
+        if: matrix.lang.name == 'rust'
+        uses: dtolnay/rust-action@stable
+      
+      - name: Set up Zig
+        if: matrix.lang.name == 'zig'
+        uses: goto-bus-stop/setup-zig@v2
+        with:
+          version: 0.13.0
+      
+      - name: Compile ${{ matrix.lang.name }}
+        working-directory: ${{ matrix.lang.dir }}
+        run: ${{ matrix.lang.compile }}
+      
+      - name: Run ${{ matrix.lang.name }}
+        working-directory: ${{ matrix.lang.dir }}
+        run: ${{ matrix.lang.run }}
+      
+      - name: Cleanup ${{ matrix.lang.name }}
+        working-directory: ${{ matrix.lang.dir }}
+        run: ${{ matrix.lang.clean }}
+
+  verify-api-servers:
+    name: Verify API server builds
+    runs-on: ubuntu-latest
+    needs: build-benchrunner
+    strategy:
+      fail-fast: false
+      matrix:
+        server:
+          - name: go-http
+            dir: api/go-http
+            build: go build -o server main.go
+          - name: go-fasthttp
+            dir: api/go-fasthttp
+            build: go build -o server main.go
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+      
+      - name: Build ${{ matrix.server.name }}
+        working-directory: ${{ matrix.server.dir }}
+        run: ${{ matrix.server.build }}
