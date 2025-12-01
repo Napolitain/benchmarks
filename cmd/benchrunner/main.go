@@ -26,6 +26,17 @@ var (
 	benchMode   string
 )
 
+// getBenchmarkTool returns "poop" if available, otherwise "hyperfine"
+func getBenchmarkTool() (string, error) {
+	if _, err := exec.LookPath("poop"); err == nil {
+		return "poop", nil
+	}
+	if _, err := exec.LookPath("hyperfine"); err == nil {
+		return "hyperfine", nil
+	}
+	return "", fmt.Errorf("neither poop nor hyperfine found. Install poop or hyperfine")
+}
+
 func main() {
 	// Find base directory (repo root)
 	wd, _ := os.Getwd()
@@ -60,7 +71,7 @@ func main() {
 	runStartupCmd := &cobra.Command{
 		Use:   "startup",
 		Short: "Run startup time benchmarks",
-		Long:  "Run startup time benchmarks for all languages using hyperfine",
+		Long:  "Run startup time benchmarks for all languages using poop (or hyperfine as fallback)",
 		RunE:  runStartupBenchmarks,
 	}
 
@@ -70,7 +81,7 @@ func main() {
 	runHelloworldCmd := &cobra.Command{
 		Use:   "helloworld [language]",
 		Short: "Run helloworld benchmarks",
-		Long: `Compile and benchmark helloworld programs in various languages using hyperfine.
+		Long: `Compile and benchmark helloworld programs in various languages using poop (or hyperfine as fallback).
 
 Modes:
   compile    - Benchmark compilation time only (cold builds)
@@ -87,9 +98,9 @@ Modes:
 
 	// Run startup-compute subcommand
 	runStartupComputeCmd := &cobra.Command{
-		Use:   "startup-compute [language]",
-		Short: "Run startup compute (bubblesort) benchmarks",
-		Long: `Compile and benchmark bubblesort programs in various languages using hyperfine.
+		Use:   "compute [language]",
+		Short: "Run compute (bubblesort) benchmarks",
+		Long: `Compile and benchmark bubblesort programs in various languages using poop (or hyperfine as fallback).
 
 Modes:
   compile    - Benchmark compilation time only (cold builds)
@@ -106,9 +117,9 @@ Modes:
 
 	// Run startup-memory subcommand
 	runStartupMemoryCmd := &cobra.Command{
-		Use:   "startup-memory [language]",
-		Short: "Run startup memory (rectangle YAML parsing) benchmarks",
-		Long: `Compile and benchmark rectangle YAML parsing programs in various languages using hyperfine.
+		Use:   "cli [language]",
+		Short: "Run CLI (rectangle YAML parsing) benchmarks",
+		Long: `Compile and benchmark rectangle YAML parsing programs in various languages using poop (or hyperfine as fallback).
 
 Modes:
   compile    - Benchmark compilation time only (cold builds)
@@ -127,7 +138,7 @@ Modes:
 	runFFICmd := &cobra.Command{
 		Use:   "ffi [language]",
 		Short: "Run FFI benchmarks",
-		Long: `Compile and benchmark FFI programs in various languages using hyperfine.
+		Long: `Compile and benchmark FFI programs in various languages using poop (or hyperfine as fallback).
 
 Modes:
   compile    - Benchmark compilation time only (cold builds)
@@ -283,46 +294,51 @@ func printSummary(results []*benchmark.Result) {
 }
 
 func runStartupBenchmarks(cmd *cobra.Command, args []string) error {
-	startupDir := filepath.Join(baseDir, "startup")
-	
-	// Check if hyperfine is installed
-	if _, err := exec.LookPath("hyperfine"); err != nil {
-		return fmt.Errorf("hyperfine not found. Install with: sudo apt install hyperfine")
+	// Check for benchmark tool
+	benchTool, err := getBenchmarkTool()
+	if err != nil {
+		return err
 	}
 	
-	fmt.Println("Running startup time benchmarks with hyperfine...")
+	fmt.Printf("Running startup time benchmarks with %s...\n", benchTool)
 	fmt.Println(strings.Repeat("=", 80))
 	
 	// Define benchmark commands
-	memoryDir := filepath.Join(startupDir, "memory")
+	computeDir := filepath.Join(baseDir, "compute")
+	cliDir := filepath.Join(baseDir, "cli")
 	benchmarks := []struct {
 		name string
 		cmd  string
 	}{
-		{"Go Bubblesort", "cd " + filepath.Join(startupDir, "compute") + " && go run bubblesort.go"},
-		{"Node Bubblesort", filepath.Join(startupDir, "compute", "bubblesort.js")},
-		{"Python Bubblesort", filepath.Join(startupDir, "compute", "bubblesort.py")},
-		{"Go Rectangle", "cd " + memoryDir + " && go run rectangle.go test_rectangle.yaml"},
-		{"Node Rectangle", filepath.Join(memoryDir, "rectangle.js") + " " + filepath.Join(memoryDir, "test_rectangle.yaml")},
-		{"Python Rectangle", filepath.Join(memoryDir, "rectangle.py") + " " + filepath.Join(memoryDir, "test_rectangle.yaml")},
+		{"Go Bubblesort", "cd " + computeDir + " && go run bubblesort.go"},
+		{"Node Bubblesort", filepath.Join(computeDir, "bubblesort.js")},
+		{"Python Bubblesort", filepath.Join(computeDir, "bubblesort.py")},
+		{"Go Rectangle", "cd " + cliDir + " && go run rectangle.go test_rectangle.yaml"},
+		{"Node Rectangle", filepath.Join(cliDir, "rectangle.js") + " " + filepath.Join(cliDir, "test_rectangle.yaml")},
+		{"Python Rectangle", filepath.Join(cliDir, "rectangle.py") + " " + filepath.Join(cliDir, "test_rectangle.yaml")},
 	}
 	
-	// Build hyperfine command
+	// Build command args based on tool
 	var cmdArgs []string
-	cmdArgs = append(cmdArgs, "--warmup", "3", "--runs", "10")
-	
-	for _, b := range benchmarks {
-		cmdArgs = append(cmdArgs, "--command-name", b.name, b.cmd)
+	if benchTool == "poop" {
+		for _, b := range benchmarks {
+			cmdArgs = append(cmdArgs, b.cmd)
+		}
+	} else {
+		cmdArgs = append(cmdArgs, "--warmup", "3", "--runs", "10")
+		for _, b := range benchmarks {
+			cmdArgs = append(cmdArgs, "--command-name", b.name, b.cmd)
+		}
 	}
 	
-	// Run hyperfine
-	hyperfineCmd := exec.Command("hyperfine", cmdArgs...)
-	hyperfineCmd.Stdout = os.Stdout
-	hyperfineCmd.Stderr = os.Stderr
-	hyperfineCmd.Dir = baseDir
+	// Run benchmark tool
+	benchCmd := exec.Command(benchTool, cmdArgs...)
+	benchCmd.Stdout = os.Stdout
+	benchCmd.Stderr = os.Stderr
+	benchCmd.Dir = baseDir
 	
-	if err := hyperfineCmd.Run(); err != nil {
-		return fmt.Errorf("hyperfine failed: %w", err)
+	if err := benchCmd.Run(); err != nil {
+		return fmt.Errorf("%s failed: %w", benchTool, err)
 	}
 	
 	fmt.Println(strings.Repeat("=", 80))
@@ -464,154 +480,7 @@ func getHelloworldLanguages(baseDir string) []helloworldLang {
 }
 
 func runHelloworldBenchmarks(cmd *cobra.Command, args []string) error {
-	// Validate mode
-	validModes := map[string]bool{"compile": true, "full-cold": true, "full-hot": true, "exec": true}
-	if !validModes[benchMode] {
-		return fmt.Errorf("invalid mode: %s (valid: compile, full-cold, full-hot, exec)", benchMode)
-	}
-
-	// Check if hyperfine is installed
-	if _, err := exec.LookPath("hyperfine"); err != nil {
-		return fmt.Errorf("hyperfine not found. Install with: sudo apt install hyperfine")
-	}
-
-	languages := getHelloworldLanguages(baseDir)
-
-	// Filter by language if specified
-	var targetLang string
-	if len(args) > 0 {
-		targetLang = strings.ToLower(args[0])
-	}
-
-	var langsToRun []helloworldLang
-	for _, lang := range languages {
-		if targetLang == "" || lang.name == targetLang {
-			// Skip interpreted languages for compile modes
-			if (benchMode == "compile" || benchMode == "full-cold" || benchMode == "full-hot") && lang.compileCmd == "" {
-				fmt.Printf("Skipping %s (interpreted, no compilation)\n", lang.name)
-				continue
-			}
-			langsToRun = append(langsToRun, lang)
-		}
-	}
-
-	if len(langsToRun) == 0 {
-		return fmt.Errorf("no matching language found: %s", targetLang)
-	}
-
-	fmt.Printf("Running helloworld benchmarks [mode: %s]\n", benchMode)
-	fmt.Println(strings.Repeat("=", 80))
-
-	// For exec mode, pre-compile all binaries first
-	if benchMode == "exec" {
-		fmt.Println("Pre-compiling binaries...")
-		for _, lang := range langsToRun {
-			if lang.compileCmd == "" {
-				fmt.Printf("%-10s: interpreted (no build needed)\n", lang.name)
-				continue
-			}
-			fmt.Printf("%-10s: compiling... ", lang.name)
-			compileExec := exec.Command("sh", "-c", lang.compileCmd)
-			compileExec.Dir = lang.dir
-			output, err := compileExec.CombinedOutput()
-			if err != nil {
-				fmt.Printf("FAILED\n%s\n", string(output))
-				return fmt.Errorf("failed to compile %s: %w", lang.name, err)
-			}
-			fmt.Println("OK")
-		}
-		fmt.Println(strings.Repeat("=", 80))
-	}
-
-	fmt.Println("\nRunning benchmarks with hyperfine...")
-	fmt.Println(strings.Repeat("=", 80))
-
-	// Build hyperfine command
-	var cmdArgs []string
-	cmdArgs = append(cmdArgs, "--warmup", fmt.Sprintf("%d", warmup), "--runs", fmt.Sprintf("%d", runs))
-
-	for _, lang := range langsToRun {
-		var benchCmd, prepareCmd string
-
-		switch benchMode {
-		case "compile":
-			// Benchmark compilation only
-			benchCmd = fmt.Sprintf("cd %s && %s", lang.dir, lang.compileCmd)
-			prepareCmd = fmt.Sprintf("cd %s && %s", lang.dir, lang.cleanCmd)
-
-		case "full-cold":
-			// Benchmark compilation + execution (cold)
-			benchCmd = fmt.Sprintf("cd %s && %s && %s", lang.dir, lang.compileCmd, lang.runCmd)
-			prepareCmd = fmt.Sprintf("cd %s && %s", lang.dir, lang.cleanCmd)
-
-		case "full-hot":
-			// Benchmark compilation + execution (hot, no prepare)
-			benchCmd = fmt.Sprintf("cd %s && %s && %s", lang.dir, lang.compileCmd, lang.runCmd)
-
-		case "exec":
-			// Benchmark execution only
-			benchCmd = fmt.Sprintf("cd %s && %s", lang.dir, lang.runCmd)
-		}
-
-		if prepareCmd != "" {
-			cmdArgs = append(cmdArgs, "--prepare", prepareCmd)
-		}
-		cmdArgs = append(cmdArgs, "--command-name", lang.name, benchCmd)
-	}
-
-	// Run hyperfine
-	hyperfineCmd := exec.Command("hyperfine", cmdArgs...)
-	hyperfineCmd.Stdout = os.Stdout
-	hyperfineCmd.Stderr = os.Stderr
-	hyperfineCmd.Dir = baseDir
-
-	if err := hyperfineCmd.Run(); err != nil {
-		return fmt.Errorf("hyperfine failed: %w", err)
-	}
-
-	fmt.Println(strings.Repeat("=", 80))
-
-	// Report binary sizes for compile modes
-	if benchMode == "compile" || benchMode == "full-cold" || benchMode == "full-hot" {
-		fmt.Println("\nBinary sizes:")
-		fmt.Println(strings.Repeat("-", 40))
-		fmt.Printf("%-15s %10s\n", "Language", "Size")
-		fmt.Println(strings.Repeat("-", 40))
-
-		for _, lang := range langsToRun {
-			if lang.binaryPath == "" {
-				continue
-			}
-			binaryFullPath := filepath.Join(lang.dir, lang.binaryPath)
-			if info, err := os.Stat(binaryFullPath); err == nil {
-				size := info.Size()
-				var sizeStr string
-				if size >= 1024*1024 {
-					sizeStr = fmt.Sprintf("%.2f MB", float64(size)/(1024*1024))
-				} else if size >= 1024 {
-					sizeStr = fmt.Sprintf("%.2f KB", float64(size)/1024)
-				} else {
-					sizeStr = fmt.Sprintf("%d B", size)
-				}
-				fmt.Printf("%-15s %10s\n", lang.name, sizeStr)
-			} else {
-				fmt.Printf("%-15s %10s\n", lang.name, "N/A")
-			}
-		}
-		fmt.Println(strings.Repeat("-", 40))
-	}
-
-	// Clean up build artifacts
-	fmt.Println("\nCleaning up build artifacts...")
-	for _, lang := range langsToRun {
-		if lang.cleanCmd != "" {
-			cleanExec := exec.Command("sh", "-c", lang.cleanCmd)
-			cleanExec.Dir = lang.dir
-			cleanExec.Run()
-		}
-	}
-
-	return nil
+	return runGenericBenchmarks("helloworld", getHelloworldLanguages(baseDir), args)
 }
 
 // ============================================================================
@@ -619,7 +488,7 @@ func runHelloworldBenchmarks(cmd *cobra.Command, args []string) error {
 // ============================================================================
 
 func getStartupComputeLanguages(baseDir string) []helloworldLang {
-	dir := filepath.Join(baseDir, "startup", "compute")
+	dir := filepath.Join(baseDir, "compute")
 	return []helloworldLang{
 		{
 			name:       "go",
@@ -670,7 +539,7 @@ func runStartupComputeBenchmarks(cmd *cobra.Command, args []string) error {
 // ============================================================================
 
 func getStartupMemoryLanguages(baseDir string) []helloworldLang {
-	dir := filepath.Join(baseDir, "startup", "memory")
+	dir := filepath.Join(baseDir, "cli")
 	cppDir := filepath.Join(dir, "cpp")
 	yamlFile := filepath.Join(dir, "test_rectangle.yaml")
 	return []helloworldLang{
@@ -798,9 +667,10 @@ func runGenericBenchmarks(suiteName string, languages []helloworldLang, args []s
 		return fmt.Errorf("invalid mode: %s (valid: compile, full-cold, full-hot, exec)", benchMode)
 	}
 
-	// Check if hyperfine is installed
-	if _, err := exec.LookPath("hyperfine"); err != nil {
-		return fmt.Errorf("hyperfine not found. Install with: sudo apt install hyperfine")
+	// Check for benchmark tool
+	benchTool, err := getBenchmarkTool()
+	if err != nil {
+		return err
 	}
 
 	// Filter by language if specified
@@ -833,10 +703,10 @@ func runGenericBenchmarks(suiteName string, languages []helloworldLang, args []s
 		fmt.Println("Pre-compiling binaries...")
 		for _, lang := range langsToRun {
 			if lang.compileCmd == "" {
-				fmt.Printf("%-15s: interpreted (no build needed)\n", lang.name)
+				fmt.Printf("%-20s: interpreted (no build needed)\n", lang.name)
 				continue
 			}
-			fmt.Printf("%-15s: compiling... ", lang.name)
+			fmt.Printf("%-20s: compiling... ", lang.name)
 			compileExec := exec.Command("sh", "-c", lang.compileCmd)
 			compileExec.Dir = lang.dir
 			output, err := compileExec.CombinedOutput()
@@ -849,46 +719,63 @@ func runGenericBenchmarks(suiteName string, languages []helloworldLang, args []s
 		fmt.Println(strings.Repeat("=", 80))
 	}
 
-	fmt.Println("\nRunning benchmarks with hyperfine...")
+	fmt.Printf("\nRunning benchmarks with %s...\n", benchTool)
 	fmt.Println(strings.Repeat("=", 80))
 
-	// Build hyperfine command
+	// Build command args based on tool
 	var cmdArgs []string
-	cmdArgs = append(cmdArgs, "--warmup", fmt.Sprintf("%d", warmup), "--runs", fmt.Sprintf("%d", runs))
-
-	for _, lang := range langsToRun {
-		var benchCmd, prepareCmd string
-
-		switch benchMode {
-		case "compile":
-			benchCmd = fmt.Sprintf("cd %s && %s", lang.dir, lang.compileCmd)
-			prepareCmd = fmt.Sprintf("cd %s && %s", lang.dir, lang.cleanCmd)
-
-		case "full-cold":
-			benchCmd = fmt.Sprintf("cd %s && %s && %s", lang.dir, lang.compileCmd, lang.runCmd)
-			prepareCmd = fmt.Sprintf("cd %s && %s", lang.dir, lang.cleanCmd)
-
-		case "full-hot":
-			benchCmd = fmt.Sprintf("cd %s && %s && %s", lang.dir, lang.compileCmd, lang.runCmd)
-
-		case "exec":
-			benchCmd = fmt.Sprintf("cd %s && %s", lang.dir, lang.runCmd)
+	if benchTool == "poop" {
+		for _, lang := range langsToRun {
+			var benchCmd string
+			switch benchMode {
+			case "compile":
+				benchCmd = fmt.Sprintf("cd %s && %s", lang.dir, lang.compileCmd)
+			case "full-cold":
+				benchCmd = fmt.Sprintf("cd %s && %s && %s && %s", lang.dir, lang.cleanCmd, lang.compileCmd, lang.runCmd)
+			case "full-hot":
+				benchCmd = fmt.Sprintf("cd %s && %s && %s", lang.dir, lang.compileCmd, lang.runCmd)
+			case "exec":
+				benchCmd = fmt.Sprintf("cd %s && %s", lang.dir, lang.runCmd)
+			}
+			cmdArgs = append(cmdArgs, benchCmd)
 		}
+	} else {
+		cmdArgs = append(cmdArgs, "--warmup", fmt.Sprintf("%d", warmup), "--runs", fmt.Sprintf("%d", runs))
 
-		if prepareCmd != "" {
-			cmdArgs = append(cmdArgs, "--prepare", prepareCmd)
+		for _, lang := range langsToRun {
+			var benchCmd, prepareCmd string
+
+			switch benchMode {
+			case "compile":
+				benchCmd = fmt.Sprintf("cd %s && %s", lang.dir, lang.compileCmd)
+				prepareCmd = fmt.Sprintf("cd %s && %s", lang.dir, lang.cleanCmd)
+
+			case "full-cold":
+				benchCmd = fmt.Sprintf("cd %s && %s && %s", lang.dir, lang.compileCmd, lang.runCmd)
+				prepareCmd = fmt.Sprintf("cd %s && %s", lang.dir, lang.cleanCmd)
+
+			case "full-hot":
+				benchCmd = fmt.Sprintf("cd %s && %s && %s", lang.dir, lang.compileCmd, lang.runCmd)
+
+			case "exec":
+				benchCmd = fmt.Sprintf("cd %s && %s", lang.dir, lang.runCmd)
+			}
+
+			if prepareCmd != "" {
+				cmdArgs = append(cmdArgs, "--prepare", prepareCmd)
+			}
+			cmdArgs = append(cmdArgs, "--command-name", lang.name, benchCmd)
 		}
-		cmdArgs = append(cmdArgs, "--command-name", lang.name, benchCmd)
 	}
 
-	// Run hyperfine
-	hyperfineCmd := exec.Command("hyperfine", cmdArgs...)
-	hyperfineCmd.Stdout = os.Stdout
-	hyperfineCmd.Stderr = os.Stderr
-	hyperfineCmd.Dir = baseDir
+	// Run benchmark tool
+	benchExec := exec.Command(benchTool, cmdArgs...)
+	benchExec.Stdout = os.Stdout
+	benchExec.Stderr = os.Stderr
+	benchExec.Dir = baseDir
 
-	if err := hyperfineCmd.Run(); err != nil {
-		return fmt.Errorf("hyperfine failed: %w", err)
+	if err := benchExec.Run(); err != nil {
+		return fmt.Errorf("%s failed: %w", benchTool, err)
 	}
 
 	fmt.Println(strings.Repeat("=", 80))
@@ -897,7 +784,7 @@ func runGenericBenchmarks(suiteName string, languages []helloworldLang, args []s
 	if benchMode == "compile" || benchMode == "full-cold" || benchMode == "full-hot" {
 		fmt.Println("\nBinary sizes:")
 		fmt.Println(strings.Repeat("-", 40))
-		fmt.Printf("%-15s %10s\n", "Language", "Size")
+		fmt.Printf("%-20s %10s\n", "Language", "Size")
 		fmt.Println(strings.Repeat("-", 40))
 
 		for _, lang := range langsToRun {
@@ -915,9 +802,9 @@ func runGenericBenchmarks(suiteName string, languages []helloworldLang, args []s
 				} else {
 					sizeStr = fmt.Sprintf("%d B", size)
 				}
-				fmt.Printf("%-15s %10s\n", lang.name, sizeStr)
+				fmt.Printf("%-20s %10s\n", lang.name, sizeStr)
 			} else {
-				fmt.Printf("%-15s %10s\n", lang.name, "N/A")
+				fmt.Printf("%-20s %10s\n", lang.name, "N/A")
 			}
 		}
 		fmt.Println(strings.Repeat("-", 40))
