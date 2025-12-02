@@ -106,3 +106,4 @@ api/http_load_test
 
 # Generated protobuf files
 *.pb.go
+cli/cpp/build/

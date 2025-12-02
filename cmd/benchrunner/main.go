@@ -318,6 +318,7 @@ type helloworldLang struct {
 	binaryPath string   // path to the compiled binary (relative to dir)
 	cleanCmd   string   // command to clean build artifacts
 	cleanFiles []string // files/dirs to remove for cold builds
+	fullHotCmd string   // optional: command for full-hot mode (e.g., go run)
 }
 
 func getHelloworldLanguages(baseDir string) []helloworldLang {
@@ -370,6 +371,7 @@ func getHelloworldLanguages(baseDir string) []helloworldLang {
 			binaryPath: "hello",
 			cleanCmd:   "rm -f hello",
 			cleanFiles: []string{"hello"},
+			fullHotCmd: "go run main.go",
 		},
 		// Rust variants
 		{
@@ -429,6 +431,15 @@ func getHelloworldLanguages(baseDir string) []helloworldLang {
 			dir:    filepath.Join(hwDir, "python"),
 			runCmd: "python3 main.py",
 		},
+		{
+			name:       "java",
+			dir:        filepath.Join(hwDir, "java"),
+			compileCmd: "javac Main.java",
+			runCmd:     "java Main",
+			binaryPath: "Main.class",
+			cleanCmd:   "rm -f *.class",
+			cleanFiles: []string{"Main.class"},
+		},
 	}
 }
 
@@ -451,6 +462,7 @@ func getComputeLanguages(baseDir string) []helloworldLang {
 			binaryPath: "bubblesort",
 			cleanCmd:   "rm -f bubblesort",
 			cleanFiles: []string{"bubblesort"},
+			fullHotCmd: "go run bubblesort.go",
 		},
 		{
 			name:       "rust",
@@ -521,6 +533,7 @@ func getCLILanguages(baseDir string) []helloworldLang {
 			binaryPath: "rectangle",
 			cleanCmd:   "rm -f rectangle",
 			cleanFiles: []string{"rectangle"},
+			fullHotCmd: "go run rectangle.go " + yamlFile,
 		},
 		{
 			name:       "rust",
@@ -558,6 +571,15 @@ func getCLILanguages(baseDir string) []helloworldLang {
 			name:   "python",
 			dir:    filepath.Join(cliDir, "python"),
 			runCmd: "python3 rectangle.py " + yamlFile,
+		},
+		{
+			name:       "java",
+			dir:        filepath.Join(cliDir, "java"),
+			compileCmd: "javac -cp snakeyaml.jar Rectangle.java",
+			runCmd:     "java -cp .:snakeyaml.jar Rectangle " + yamlFile,
+			binaryPath: "Rectangle.class",
+			cleanCmd:   "rm -f *.class",
+			cleanFiles: []string{"Rectangle.class"},
 		},
 	}
 }
@@ -684,15 +706,38 @@ func runGenericBenchmarks(suiteName string, languages []helloworldLang, args []s
 		return err
 	}
 
-	// Filter by language if specified
-	var targetLang string
-	if len(args) > 0 {
-		targetLang = strings.ToLower(args[0])
+	// Build set of target languages from args (supports multiple: "go,rust,zig" or "go" "rust" "zig")
+	targetLangs := make(map[string]bool)
+	for _, arg := range args {
+		for _, lang := range strings.Split(arg, ",") {
+			lang = strings.TrimSpace(strings.ToLower(lang))
+			if lang != "" {
+				targetLangs[lang] = true
+			}
+		}
+	}
+
+	// matchesTarget checks if a language name matches any target (exact or prefix match)
+	matchesTarget := func(langName string) bool {
+		if len(targetLangs) == 0 {
+			return true // No filter, run all
+		}
+		if targetLangs[langName] {
+			return true // Exact match
+		}
+		// Check prefix match (e.g., "node" matches "node-direct" and "node-build")
+		for target := range targetLangs {
+			if strings.HasPrefix(langName, target+"-") || strings.HasPrefix(langName, target+"_") {
+				return true
+			}
+		}
+		return false
 	}
 
 	var langsToRun []helloworldLang
 	for _, lang := range languages {
-		if targetLang == "" || lang.name == targetLang {
+		// If no targets specified, run all; otherwise check if lang matches any target
+		if matchesTarget(lang.name) {
 			// Skip interpreted languages only for compile mode
 			if benchMode == "compile" && lang.compileCmd == "" {
 				fmt.Printf("Skipping %s (interpreted, no compilation)\n", lang.name)
@@ -703,7 +748,7 @@ func runGenericBenchmarks(suiteName string, languages []helloworldLang, args []s
 	}
 
 	if len(langsToRun) == 0 {
-		return fmt.Errorf("no matching language found: %s", targetLang)
+		return fmt.Errorf("no matching language found: %v", args)
 	}
 
 	fmt.Printf("Running %s benchmarks [mode: %s]\n", suiteName, benchMode)
@@ -752,6 +797,9 @@ func runGenericBenchmarks(suiteName string, languages []helloworldLang, args []s
 				if lang.compileCmd == "" {
 					// Interpreted language - just run
 					benchCmd = fmt.Sprintf("cd %s && %s", lang.dir, lang.runCmd)
+				} else if lang.fullHotCmd != "" {
+					// Use dedicated full-hot command (e.g., go run)
+					benchCmd = fmt.Sprintf("cd %s && %s", lang.dir, lang.fullHotCmd)
 				} else {
 					benchCmd = fmt.Sprintf("cd %s && %s && %s", lang.dir, lang.compileCmd, lang.runCmd)
 				}
@@ -763,39 +811,74 @@ func runGenericBenchmarks(suiteName string, languages []helloworldLang, args []s
 	} else {
 		cmdArgs = append(cmdArgs, "--warmup", fmt.Sprintf("%d", warmup), "--runs", fmt.Sprintf("%d", runs))
 
+		// Collect all benchmark commands with their prepare commands
+		type benchEntry struct {
+			name       string
+			dir        string
+			benchCmd   string
+			prepareCmd string
+		}
+		var entries []benchEntry
+
 		for _, lang := range langsToRun {
 			var benchCmd, prepareCmd string
 
 			switch benchMode {
 			case "compile":
-				benchCmd = fmt.Sprintf("cd %s && %s", lang.dir, lang.compileCmd)
-				prepareCmd = fmt.Sprintf("cd %s && %s", lang.dir, lang.cleanCmd)
+				benchCmd = lang.compileCmd
+				prepareCmd = lang.cleanCmd
 
 			case "full-cold":
 				if lang.compileCmd == "" {
 					// Interpreted language - just run
-					benchCmd = fmt.Sprintf("cd %s && %s", lang.dir, lang.runCmd)
+					benchCmd = lang.runCmd
 				} else {
-					benchCmd = fmt.Sprintf("cd %s && %s && %s", lang.dir, lang.compileCmd, lang.runCmd)
-					prepareCmd = fmt.Sprintf("cd %s && %s", lang.dir, lang.cleanCmd)
+					benchCmd = fmt.Sprintf("%s && %s", lang.compileCmd, lang.runCmd)
+					prepareCmd = lang.cleanCmd
 				}
 
 			case "full-hot":
 				if lang.compileCmd == "" {
 					// Interpreted language - just run
-					benchCmd = fmt.Sprintf("cd %s && %s", lang.dir, lang.runCmd)
+					benchCmd = lang.runCmd
+				} else if lang.fullHotCmd != "" {
+					// Use dedicated full-hot command (e.g., go run)
+					benchCmd = lang.fullHotCmd
 				} else {
-					benchCmd = fmt.Sprintf("cd %s && %s && %s", lang.dir, lang.compileCmd, lang.runCmd)
+					benchCmd = fmt.Sprintf("%s && %s", lang.compileCmd, lang.runCmd)
 				}
 
 			case "exec":
-				benchCmd = fmt.Sprintf("cd %s && %s", lang.dir, lang.runCmd)
+				benchCmd = lang.runCmd
 			}
 
-			if prepareCmd != "" {
-				cmdArgs = append(cmdArgs, "--prepare", prepareCmd)
+			entries = append(entries, benchEntry{name: lang.name, dir: lang.dir, benchCmd: benchCmd, prepareCmd: prepareCmd})
+		}
+
+		// Check if any entry needs a prepare command
+		needsPrepare := false
+		for _, e := range entries {
+			if e.prepareCmd != "" {
+				needsPrepare = true
+				break
 			}
-			cmdArgs = append(cmdArgs, "--command-name", lang.name, benchCmd)
+		}
+
+		// Add commands with prepare if needed (hyperfine requires 0, 1, or N prepare commands)
+		for _, e := range entries {
+			if needsPrepare {
+				prepare := e.prepareCmd
+				if prepare == "" {
+					prepare = "true" // no-op for languages that don't need preparation
+				} else {
+					// Wrap prepare with cd to the directory
+					prepare = fmt.Sprintf("cd %s && %s", e.dir, prepare)
+				}
+				cmdArgs = append(cmdArgs, "--prepare", prepare)
+			}
+			// Wrap benchmark command with cd to the directory, show just name: cmd in display
+			fullCmd := fmt.Sprintf("cd %s && %s", e.dir, e.benchCmd)
+			cmdArgs = append(cmdArgs, "--command-name", fmt.Sprintf("%s: %s", e.name, e.benchCmd), fullCmd)
 		}
 	}
 
