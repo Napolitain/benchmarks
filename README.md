@@ -100,10 +100,23 @@ The `cli`, `compute`, `ffi`, and `helloworld` benchmarks support the following m
 | `full-hot` | Benchmark compilation + execution (hot builds, cache allowed) |
 | `exec` | Benchmark execution time only (pre-compiled) |
 
+### Language Filters
+
+For Node.js/TypeScript benchmarks, you can use these filters:
+
+| Filter | Description |
+|--------|-------------|
+| `node` | Run all Node.js variants (JavaScript + TypeScript, direct + build) |
+| `nodejs` | Run JavaScript variants only (nodejs-direct, nodejs-build) |
+| `nodets` | Run TypeScript variants only (nodets-direct, nodets-build) |
+
 **Examples:**
 ```bash
 benchrunner run helloworld                       # Run all languages (exec mode)
 benchrunner run helloworld go                    # Run specific language
+benchrunner run helloworld node                  # Run all Node.js/TypeScript variants
+benchrunner run helloworld nodejs                # Run JavaScript variants only
+benchrunner run helloworld nodets                # Run TypeScript variants only
 benchrunner run compute -m compile               # Benchmark compilation only
 benchrunner run cli -m full-cold -r 20 -w 5      # Full cold benchmark with custom runs
 ```

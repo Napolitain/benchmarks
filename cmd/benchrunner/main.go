@@ -413,14 +413,32 @@ func getHelloworldLanguages(baseDir string) []helloworldLang {
 		},
 		// Interpreted languages
 		{
-			name:   "node-direct",
+			name:   "nodejs-direct",
 			dir:    filepath.Join(hwDir, "node"),
 			runCmd: "node main.js",
 		},
 		{
-			name:       "node-build",
+			name:       "nodejs-build",
 			dir:        filepath.Join(hwDir, "node"),
-			compileCmd: "npx esbuild main.js --bundle --minify --platform=node --outfile=main.min.js",
+			compileCmd: "npx esbuild main.js --bundle --minify --platform=node --format=esm --outfile=main.min.js",
+			runCmd:     "node main.min.js",
+			binaryPath: "main.min.js",
+			cleanCmd:   "rm -f main.min.js",
+			cleanFiles: []string{"main.min.js"},
+		},
+		{
+			name:       "nodets-direct",
+			dir:        filepath.Join(hwDir, "node"),
+			compileCmd: "npx tsc",
+			runCmd:     "node dist/main.js",
+			binaryPath: "dist/main.js",
+			cleanCmd:   "rm -rf dist",
+			cleanFiles: []string{"dist"},
+		},
+		{
+			name:       "nodets-build",
+			dir:        filepath.Join(hwDir, "node"),
+			compileCmd: "npx tsc --noEmit && npx esbuild main.ts --bundle --minify --platform=node --format=esm --outfile=main.min.js",
 			runCmd:     "node main.min.js",
 			binaryPath: "main.min.js",
 			cleanCmd:   "rm -f main.min.js",
@@ -483,14 +501,32 @@ func getComputeLanguages(baseDir string) []helloworldLang {
 			cleanFiles: []string{"bubblesort", "bubblesort.o"},
 		},
 		{
-			name:   "node-direct",
+			name:   "nodejs-direct",
 			dir:    filepath.Join(computeDir, "node"),
 			runCmd: "node bubblesort.js",
 		},
 		{
-			name:       "node-build",
+			name:       "nodejs-build",
 			dir:        filepath.Join(computeDir, "node"),
-			compileCmd: "npx esbuild bubblesort.js --bundle --minify --platform=node --outfile=bubblesort.min.js",
+			compileCmd: "npx esbuild bubblesort.js --bundle --minify --platform=node --format=esm --outfile=bubblesort.min.js",
+			runCmd:     "node bubblesort.min.js",
+			binaryPath: "bubblesort.min.js",
+			cleanCmd:   "rm -f bubblesort.min.js",
+			cleanFiles: []string{"bubblesort.min.js"},
+		},
+		{
+			name:       "nodets-direct",
+			dir:        filepath.Join(computeDir, "node"),
+			compileCmd: "npx tsc",
+			runCmd:     "node dist/bubblesort.js",
+			binaryPath: "dist/bubblesort.js",
+			cleanCmd:   "rm -rf dist",
+			cleanFiles: []string{"dist"},
+		},
+		{
+			name:       "nodets-build",
+			dir:        filepath.Join(computeDir, "node"),
+			compileCmd: "npx tsc --noEmit && npx esbuild bubblesort.ts --bundle --minify --platform=node --format=esm --outfile=bubblesort.min.js",
 			runCmd:     "node bubblesort.min.js",
 			binaryPath: "bubblesort.min.js",
 			cleanCmd:   "rm -f bubblesort.min.js",
@@ -554,18 +590,36 @@ func getCLILanguages(baseDir string) []helloworldLang {
 			cleanFiles: []string{"rectangle", "rectangle.o"},
 		},
 		{
-			name:   "node-direct",
+			name:   "nodejs-direct",
 			dir:    filepath.Join(cliDir, "node"),
 			runCmd: "node rectangle.js " + yamlFile,
 		},
 		{
-			name:       "node-build",
+			name:       "nodejs-build",
 			dir:        filepath.Join(cliDir, "node"),
-			compileCmd: "npx esbuild rectangle.js --bundle --minify --platform=node --outfile=rectangle.min.js",
-			runCmd:     "node rectangle.min.js " + yamlFile,
-			binaryPath: "rectangle.min.js",
-			cleanCmd:   "rm -f rectangle.min.js",
-			cleanFiles: []string{"rectangle.min.js"},
+			compileCmd: "npx esbuild rectangle.js --bundle --minify --platform=node --format=cjs --outfile=rectangle.min.cjs",
+			runCmd:     "node rectangle.min.cjs " + yamlFile,
+			binaryPath: "rectangle.min.cjs",
+			cleanCmd:   "rm -f rectangle.min.cjs",
+			cleanFiles: []string{"rectangle.min.cjs"},
+		},
+		{
+			name:       "nodets-direct",
+			dir:        filepath.Join(cliDir, "node"),
+			compileCmd: "npx tsc",
+			runCmd:     "node dist/rectangle.js " + yamlFile,
+			binaryPath: "dist/rectangle.js",
+			cleanCmd:   "rm -rf dist",
+			cleanFiles: []string{"dist"},
+		},
+		{
+			name:       "nodets-build",
+			dir:        filepath.Join(cliDir, "node"),
+			compileCmd: "npx tsc --noEmit && npx esbuild rectangle.ts --bundle --minify --platform=node --format=cjs --outfile=rectangle.min.cjs",
+			runCmd:     "node rectangle.min.cjs " + yamlFile,
+			binaryPath: "rectangle.min.cjs",
+			cleanCmd:   "rm -f rectangle.min.cjs",
+			cleanFiles: []string{"rectangle.min.cjs"},
 		},
 		{
 			name:   "python",
@@ -718,6 +772,7 @@ func runGenericBenchmarks(suiteName string, languages []helloworldLang, args []s
 	}
 
 	// matchesTarget checks if a language name matches any target (exact or prefix match)
+	// Special handling: "node" matches all nodejs-* and nodets-* variants
 	matchesTarget := func(langName string) bool {
 		if len(targetLangs) == 0 {
 			return true // No filter, run all
@@ -725,9 +780,13 @@ func runGenericBenchmarks(suiteName string, languages []helloworldLang, args []s
 		if targetLangs[langName] {
 			return true // Exact match
 		}
-		// Check prefix match (e.g., "node" matches "node-direct" and "node-build")
+		// Check prefix match (e.g., "nodejs" matches "nodejs-direct" and "nodejs-build")
 		for target := range targetLangs {
 			if strings.HasPrefix(langName, target+"-") || strings.HasPrefix(langName, target+"_") {
+				return true
+			}
+			// Special case: "node" matches both "nodejs-*" and "nodets-*"
+			if target == "node" && (strings.HasPrefix(langName, "nodejs-") || strings.HasPrefix(langName, "nodets-")) {
 				return true
 			}
 		}

@@ -1,7 +1,7 @@
-#!/usr/bin/env npx ts-node
+#!/usr/bin/env node
 
-import * as fs from 'fs';
-import * as yaml from 'js-yaml';
+import fs from 'fs';
+import yaml from 'js-yaml';
 import { Command } from 'commander';
 
 interface RectangleData {

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
-const fs = require('fs');
-const yaml = require('js-yaml');
-const { Command } = require('commander');
+import fs from 'fs';
+import yaml from 'js-yaml';
+import { Command } from 'commander';
 
 function computeRectangleArea(data) {
     const a = data.a || 0;
