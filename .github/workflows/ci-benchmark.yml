@@ -1,0 +1,50 @@
+name: ci-benchmark
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.x'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: astral-sh/setup-uv@v4
+
+      - name: Python (pip)
+        working-directory: cli/python
+        run: |
+          pip install -r requirements.txt
+          python rectangle.py ../test_rectangle.yaml
+
+      - name: Python (uv)
+        working-directory: cli/python
+        run: uv run rectangle.py ../test_rectangle.yaml
+
+      - name: Go
+        working-directory: cli/go
+        run: |
+          go mod tidy
+          go build -o rectangle rectangle.go
+          ./rectangle ../test_rectangle.yaml
+
+      - name: Node (TypeScript bundled)
+        working-directory: cli/node
+        run: |
+          npm install
+          npx esbuild rectangle.ts --bundle --minify --platform=node --format=cjs --outfile=rectangle.min.cjs
+          node rectangle.min.cjs ../test_rectangle.yaml
