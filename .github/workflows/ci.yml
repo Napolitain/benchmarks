@@ -21,7 +21,9 @@ jobs:
           go-version: '1.21'
       
       - name: Build benchrunner
-        run: go build -o benchrunner ./cmd/benchrunner
+        run: |
+          go mod tidy
+          go build -o benchrunner ./cmd/benchrunner
 
       - name: Upload benchrunner
         uses: actions/upload-artifact@v4
@@ -59,7 +61,7 @@ jobs:
             clean: rm -f hello
           - name: go
             dir: helloworld/go
-            compile: go build -ldflags="-s -w" -o hello main.go
+            compile: go mod tidy && go build -ldflags="-s -w" -o hello main.go
             run: ./hello
             clean: rm -f hello
           - name: rust-direct
@@ -137,7 +139,7 @@ jobs:
         lang:
           - name: go
             dir: compute/go
-            compile: go build -ldflags="-s -w" -o bubblesort bubblesort.go
+            compile: go mod tidy && go build -ldflags="-s -w" -o bubblesort bubblesort.go
             run: ./bubblesort
             clean: rm -f bubblesort
           - name: rust
@@ -220,7 +222,7 @@ jobs:
             clean: rm -rf build
           - name: go
             dir: cli/go
-            compile: go build -ldflags="-s -w" -o rectangle rectangle.go
+            compile: go mod tidy && go build -ldflags="-s -w" -o rectangle rectangle.go
             run: ./rectangle ../test_rectangle.yaml
             clean: rm -f rectangle
           - name: rust
@@ -417,4 +419,6 @@ jobs:
       
       - name: Build ${{ matrix.server.name }}
         working-directory: ${{ matrix.server.dir }}
-        run: ${{ matrix.server.build }}
+        run: |
+          go mod tidy
+          ${{ matrix.server.build }}
